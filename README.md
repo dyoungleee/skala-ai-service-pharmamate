@@ -149,9 +149,12 @@ Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니
 - `GET /api/health`: 서버 상태
 - `POST /api/articles/analyze`: 공개 기사 URL 또는 직접 붙여넣은 본문 분석
 - `POST /api/chat`: 답변, 출처, Validator 결과, 후속 질문 반환
+- `POST /api/chat/stream`: 진행 상태와 검증된 답변 조각을 SSE로 반환
 - `GET /api/study-records`: 저장된 용어의 요약 목록
 
 요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 API는 localhost 단일 사용자 개발용이며 로그인·세션 접근 제어는 F7 범위입니다.
+
+스트림 이벤트는 `status`, `token`, `sources`, `recommendations`, `done`, `error`입니다. Agent의 답변 생성·Validator 처리 중 단계 상태를 전송하고, 최종 답변은 근거 검증이 완료된 뒤 작은 조각으로 전송합니다. 따라서 검증 전 초안은 브라우저에 보이지 않습니다. Vue 클라이언트 연결은 F6.3에서 제공합니다.
 
 ## 제한 사항과 향후 개선
 

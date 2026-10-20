@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessageChunk
 
 from backend.app.main import app, runtime_dependency
 from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
@@ -36,6 +37,29 @@ class FakeGraph:
             "validation_status": "pass",
             "validation_retries": 0,
             "recommendations": fallback_recommendations("임상 1상"),
+        }
+
+    async def astream_events(self, payload, version):
+        self.payload = payload
+        self.version = version
+        yield {"event": "on_chain_start", "metadata": {"langgraph_node": "answer"}}
+        yield {
+            "event": "on_chat_model_stream",
+            "metadata": {"langgraph_node": "answer"},
+            "data": {"chunk": AIMessageChunk(content='{"answer":"DRAFT_UNVALIDATED')},
+        }
+        yield {"event": "on_chain_start", "metadata": {"langgraph_node": "validator"}}
+        yield {
+            "event": "on_chain_end",
+            "metadata": {},
+            "data": {"output": {
+                "answer": "검증된 답변을 조각으로 전달합니다.",
+                "route": "article",
+                "sources": [],
+                "validation_status": "pass",
+                "validation_retries": 0,
+                "recommendations": fallback_recommendations("임상 1상"),
+            }},
         }
 
 
@@ -85,6 +109,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(payload["validation_status"], "pass")
         self.assertEqual(len(payload["recommendations"]), 3)
         self.assertIn("임상시험은 뭐야?", self.runtime.agent_graph.payload["history"])
+
+    def test_sse_stream_sends_only_the_validated_answer(self):
+        with self.client.stream("POST", "/api/chat/stream", json={"question": "임상 1상은 뭐야?"}) as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["content-type"].split(";")[0], "text/event-stream")
+            body = "".join(response.iter_text())
+        self.assertIn("event: status", body)
+        self.assertIn("event: token", body)
+        self.assertIn("검증된 답변", body)
+        self.assertNotIn("DRAFT_UNVALIDATED", body)
+        self.assertIn("event: sources", body)
+        self.assertIn("event: recommendations", body)
+        self.assertIn("event: done", body)
 
 
 if __name__ == "__main__":
