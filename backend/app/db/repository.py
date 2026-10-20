@@ -93,6 +93,8 @@ def initialize_database():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_study_sessions_token_hash
+            ON study_sessions(token_hash);
         CREATE TABLE IF NOT EXISTS session_turns (
             turn_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
@@ -206,6 +208,21 @@ def authenticate_study_session(session_id: str, token: str) -> bool:
     if row is None or not token:
         return False
     return hmac.compare_digest(row["token_hash"], hash_session_token(token))
+
+
+def session_id_for_access_token(token: str) -> str | None:
+    """Resolve an opaque session bearer without storing or returning its plaintext."""
+    if not token:
+        return None
+    token_hash = hash_session_token(token)
+    with connect_db() as conn:
+        row = conn.execute(
+            "SELECT session_id,token_hash FROM study_sessions WHERE token_hash=? LIMIT 1",
+            (token_hash,),
+        ).fetchone()
+    if row is None or not hmac.compare_digest(row["token_hash"], token_hash):
+        return None
+    return str(row["session_id"])
 
 
 def get_study_session(session_id: str) -> dict | None:

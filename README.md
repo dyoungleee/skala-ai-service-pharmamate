@@ -205,6 +205,21 @@ Vue 화면은 기사 입력·분석, 핵심 용어 선택, SSE 채팅, 출처·�
 
 현재 복합 경로는 과거 기록과 최신 웹 검색을 모두 요청합니다. 합성 복합 질문 12개에서 현행 경로와 별도 Planner 후보가 모두 작업을 12/12 선택했습니다. Planner를 추가한 후보는 p50 `1,101 ms → 2,036 ms`, 요청당 모델 호출 `1회 → 2회`, 합산 토큰 `10,541 → 15,423`으로 늘어 채택하지 않았습니다. 실제 검색·최종 답변 품질은 평가하지 않았습니다. [F8.2 실험 보고서](docs/experiments/F8_2_dynamic_planning.md)와 [ADR-006](docs/adr/ADR-006-dynamic-planning.md)에 조건과 결정을 기록했습니다.
 
+## F8.3 MCP Server
+
+`backend/app/mcp_server.py`는 현재 세션의 읽기 전용 학습 자료를 MCP 호환 클라이언트에 제공합니다. Tool `search_learning_records`, `search_read_articles`; Resource `pharmamate://learning-records`; Prompt `explain_from_learning_records`를 등록합니다. 서버는 stdio 프로세스로 실행되고, 시작 시 `PHARMAMATE_SESSION_TOKEN`을 SQLite의 해시와 대조해 해당 세션에 고정합니다. 토큰이나 세션 ID를 모델이 도구 인수로 전달하지 않으며, 기록 쓰기 기능은 없습니다.
+
+프로젝트 가상환경에 의존성을 설치하고 MCP 호스트의 로컬 설정에서 다음 실행 정보를 지정합니다. 토큰은 저장된 Vue 세션의 `access_token`이며, 아래 경로와 값은 프로젝트 환경에 맞게 바꾸고 설정 파일을 저장소에 커밋하지 마세요.
+
+    command: /absolute/path/to/project/pharma/bin/python
+    args: ["-m", "backend.app.mcp_server"]
+    cwd: /absolute/path/to/project
+    env:
+      PHARMAMATE_SESSION_TOKEN: <현재 세션 bearer token>
+      PHARMAMATE_DATA_DIR: <선택: API와 같은 데이터 폴더>
+
+MCP 호스트가 위 명령을 stdio 서버로 실행합니다. 모듈은 API와 같은 `PHARMAMATE_DATA_DIR` 또는 `.env` 값을 읽고, 기본값은 `pharmamate_data/`입니다. 합성 SQLite로 측정한 직접 호출/MCP stdio p50은 `0.317 ms / 1.010 ms`; 30회 호출이 모두 성공하고 결과가 일치했습니다. 상세 조건과 보안 범위는 [F8.3 실험 보고서](docs/experiments/F8_3_mcp_server.md)와 [ADR-007](docs/adr/ADR-007-mcp-server.md)에 있습니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.

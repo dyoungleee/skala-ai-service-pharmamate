@@ -10,6 +10,7 @@ langchain-core>=0.3,<2
 langgraph>=0.3,<2
 langchain-community>=0.3,<2
 tavily-python>=0.5,<1
+mcp>=2,<3
 pydantic>=2,<3
 
 # URL article extraction and environment configuration
