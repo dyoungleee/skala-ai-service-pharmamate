@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
 import sqlite3
 import unicodedata
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -34,6 +36,7 @@ def connect_db():
         raise RuntimeError("DB 경로가 설정되지 않았습니다. configure_database()를 먼저 호출하세요.")
     conn = sqlite3.connect(str(DB_PATH), timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 def initialize_database():
@@ -82,10 +85,204 @@ def initialize_database():
         );
         CREATE INDEX IF NOT EXISTS idx_memory_embeddings_owner
             ON memory_embeddings(owner_id);
+        CREATE TABLE IF NOT EXISTS study_sessions (
+            session_id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL,
+            active_article_json TEXT NOT NULL DEFAULT '{}',
+            selected_term_key TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS session_turns (
+            turn_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            term_key TEXT NOT NULL DEFAULT '',
+            term_name TEXT NOT NULL DEFAULT '',
+            article_id TEXT NOT NULL DEFAULT '',
+            related_to_selected INTEGER NOT NULL DEFAULT 0,
+            route TEXT NOT NULL DEFAULT '',
+            sources_json TEXT NOT NULL DEFAULT '[]',
+            recommendations_json TEXT NOT NULL DEFAULT '[]',
+            validation_status TEXT NOT NULL DEFAULT '',
+            validation_retries INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_turns_history
+            ON session_turns(session_id, created_at);
+        CREATE TABLE IF NOT EXISTS session_learning_records (
+            session_id TEXT NOT NULL,
+            term_key TEXT NOT NULL,
+            term_name TEXT NOT NULL,
+            aliases_json TEXT NOT NULL DEFAULT '[]',
+            category TEXT NOT NULL DEFAULT '',
+            simple_definition TEXT NOT NULL DEFAULT '',
+            article_context TEXT NOT NULL DEFAULT '',
+            article_id TEXT NOT NULL DEFAULT '',
+            article_url TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(session_id, term_key),
+            FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS session_study_qa (
+            qa_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            term_key TEXT NOT NULL,
+            article_id TEXT NOT NULL DEFAULT '',
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_study_qa_scope
+            ON session_study_qa(session_id, term_key, created_at);
         """)
 
 def now_local():
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def hash_session_token(token: str) -> str:
+    return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+
+def create_study_session(session_id: str, token: str) -> None:
+    timestamp = now_local()
+    with connect_db() as conn:
+        conn.execute("""INSERT INTO study_sessions
+            (session_id,token_hash,created_at,updated_at) VALUES(?,?,?,?)""",
+            (session_id, hash_session_token(token), timestamp, timestamp))
+
+
+def session_exists(session_id: str) -> bool:
+    with connect_db() as conn:
+        return conn.execute(
+            "SELECT 1 FROM study_sessions WHERE session_id=?", (session_id,)
+        ).fetchone() is not None
+
+
+def authenticate_study_session(session_id: str, token: str) -> bool:
+    with connect_db() as conn:
+        row = conn.execute(
+            "SELECT token_hash FROM study_sessions WHERE session_id=?", (session_id,)
+        ).fetchone()
+    if row is None or not token:
+        return False
+    return hmac.compare_digest(row["token_hash"], hash_session_token(token))
+
+
+def get_study_session(session_id: str) -> dict | None:
+    with connect_db() as conn:
+        row = conn.execute("SELECT * FROM study_sessions WHERE session_id=?", (session_id,)).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["active_article"] = json.loads(result.pop("active_article_json") or "{}")
+    return result
+
+
+def save_session_article(session_id: str, article: dict, selected_term_key: str = "") -> None:
+    with connect_db() as conn:
+        cur = conn.execute("""UPDATE study_sessions
+            SET active_article_json=?, selected_term_key=?, updated_at=? WHERE session_id=?""",
+            (json.dumps(article, ensure_ascii=False), selected_term_key, now_local(), session_id))
+        if cur.rowcount != 1:
+            raise KeyError("session not found")
+
+
+def update_session_selected_term(session_id: str, selected_term_key: str) -> None:
+    with connect_db() as conn:
+        cur = conn.execute("""UPDATE study_sessions SET selected_term_key=?,updated_at=?
+            WHERE session_id=?""", (selected_term_key, now_local(), session_id))
+        if cur.rowcount != 1:
+            raise KeyError("session not found")
+
+
+def append_session_turn(session_id: str, turn: dict) -> None:
+    created_at = datetime.now().astimezone().isoformat(timespec="microseconds")
+    with connect_db() as conn:
+        conn.execute("""INSERT INTO session_turns
+            (turn_id,session_id,question,answer,term_key,term_name,article_id,related_to_selected,route,
+             sources_json,recommendations_json,validation_status,validation_retries,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (uuid.uuid4().hex, session_id, turn["question"], turn["answer"],
+             turn.get("term_key", ""), turn.get("term_name", ""), turn.get("article_id", ""),
+             int(bool(turn.get("related_to_selected"))), turn.get("route", ""),
+             json.dumps(turn.get("sources") or [], ensure_ascii=False),
+             json.dumps(turn.get("recommendations") or [], ensure_ascii=False),
+             turn.get("validation_status", ""), int(turn.get("validation_retries") or 0), created_at))
+        conn.execute("""UPDATE study_sessions SET selected_term_key=?,updated_at=?
+            WHERE session_id=?""", (turn.get("term_key", ""), created_at, session_id))
+
+
+def get_session_turns(session_id: str, limit: int = 100) -> list[dict]:
+    with connect_db() as conn:
+        rows = conn.execute("""SELECT * FROM session_turns WHERE session_id=?
+            ORDER BY created_at DESC, turn_id DESC LIMIT ?""", (session_id, max(0, min(limit, 200)))).fetchall()
+    turns = []
+    for row in reversed(rows):
+        item = dict(row)
+        item["related_to_selected"] = bool(item["related_to_selected"])
+        item["sources"] = json.loads(item.pop("sources_json") or "[]")
+        item["recommendations"] = json.loads(item.pop("recommendations_json") or "[]")
+        turns.append(item)
+    return turns
+
+
+def save_session_study_record(session_id: str, term: dict, note: str = "") -> tuple[str, int, int]:
+    term_key = normalize_term(term.get("term", ""))
+    if not term_key:
+        raise ValueError("저장할 용어가 없습니다.")
+    timestamp = now_local()
+    session = get_study_session(session_id)
+    if session is None:
+        raise KeyError("session not found")
+    article = session.get("active_article") or {}
+    article_id = str(article.get("article_id") or "")
+    article_url = str(article.get("url") or "")
+    aliases = aliases_for(term)
+    with connect_db() as conn:
+        conn.execute("""INSERT INTO session_learning_records
+            (session_id,term_key,term_name,aliases_json,category,simple_definition,
+             article_context,article_id,article_url,note,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(session_id,term_key) DO UPDATE SET
+                term_name=excluded.term_name,aliases_json=excluded.aliases_json,
+                category=excluded.category,simple_definition=excluded.simple_definition,
+                article_context=excluded.article_context,article_id=excluded.article_id,
+                article_url=excluded.article_url,note=excluded.note,updated_at=excluded.updated_at""",
+            (session_id, term_key, term.get("term", ""), json.dumps(aliases, ensure_ascii=False),
+             term.get("category", ""), term.get("simple_definition", ""),
+             term.get("article_context", ""), article_id, article_url, note, timestamp, timestamp))
+        relevant = conn.execute("""SELECT question,answer,article_id FROM session_turns
+            WHERE session_id=? AND term_key=? AND related_to_selected=1
+            ORDER BY created_at""", (session_id, term_key)).fetchall()
+        inserted = 0
+        for item in relevant:
+            qid = hashlib.sha256(
+                f"{session_id}\0{term_key}\0{item['article_id']}\0{item['question']}\0{item['answer']}".encode("utf-8")
+            ).hexdigest()[:32]
+            cur = conn.execute("""INSERT OR IGNORE INTO session_study_qa
+                (qa_id,session_id,term_key,article_id,question,answer,created_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (qid, session_id, term_key, item["article_id"], item["question"], item["answer"], timestamp))
+            inserted += cur.rowcount
+        conn.execute("UPDATE study_sessions SET updated_at=? WHERE session_id=?", (timestamp, session_id))
+    return term_key, inserted, len(relevant)
+
+
+def get_session_study_records(session_id: str) -> list[dict]:
+    with connect_db() as conn:
+        rows = conn.execute("""SELECT r.*,COUNT(q.qa_id) AS qa_count
+            FROM session_learning_records r LEFT JOIN session_study_qa q
+              ON q.session_id=r.session_id AND q.term_key=r.term_key
+            WHERE r.session_id=? GROUP BY r.session_id,r.term_key
+            ORDER BY r.updated_at DESC""", (session_id,)).fetchall()
+    return [dict(row) for row in rows]
 
 def get_learned_rows():
     with connect_db() as conn:
@@ -204,7 +401,34 @@ def get_memory_documents(owner_id: str = "local") -> list[dict]:
     session/ownership migration adds owner columns to source tables.
     """
     if owner_id != "local":
-        return []
+        if not session_exists(owner_id):
+            return []
+        documents: list[dict] = []
+        with connect_db() as conn:
+            for row in conn.execute("""SELECT * FROM session_learning_records
+                WHERE session_id=? ORDER BY updated_at DESC""", (owner_id,)):
+                content = (
+                    f"용어: {row['term_name']}\n분류: {row['category']}\n"
+                    f"정의: {row['simple_definition']}\n별칭: {row['aliases_json']}\n"
+                    f"기사 맥락: {row['article_context']}\n내 학습 메모: {row['note']}"
+                )
+                documents.append({
+                    "owner_id": owner_id, "source_type": "session_note",
+                    "source_id": row["term_key"], "record_id": f"session_note:{row['term_key']}",
+                    "term_key": row["term_key"], "title": f"학습 메모: {row['term_name']}",
+                    "content": content, "source_url": row["article_url"],
+                })
+            for row in conn.execute("""SELECT q.*,r.term_name FROM session_study_qa q
+                JOIN session_learning_records r USING(session_id,term_key)
+                WHERE q.session_id=? ORDER BY q.created_at DESC""", (owner_id,)):
+                documents.append({
+                    "owner_id": owner_id, "source_type": "session_qa",
+                    "source_id": row["qa_id"], "record_id": f"session_qa:{row['qa_id']}",
+                    "term_key": row["term_key"], "title": f"학습 Q&A: {row['term_name']}",
+                    "content": f"질문: {row['question']}\n답변: {row['answer']}",
+                    "source_url": "",
+                })
+        return [document for document in documents if document["content"].strip()]
     documents: list[dict] = []
     with connect_db() as conn:
         terms = [dict(row) for row in conn.execute(
@@ -296,9 +520,18 @@ def replace_memory_embeddings(owner_id: str, rows: list[dict], active_chunk_ids:
                     :content_hash,:embedding_model,:embedding_json,:updated_at)""", rows)
 
 
-def search_study_memory(question: str, limit=5):
+def search_study_memory(question: str, limit=5, owner_id: str = "local"):
     question_low = (question or '').casefold()
     question_tokens = [s for s in re.findall(r'[A-Za-z0-9가-힣]+',question_low) if len(s)>1]
+    if owner_id != "local":
+        ranked_documents = []
+        for document in get_memory_documents(owner_id):
+            content = f"{document['title']}\n{document['content']}".casefold()
+            score = sum(4 for token in question_tokens if token in content)
+            if score:
+                ranked_documents.append((score, document))
+        ranked_documents.sort(key=lambda item: item[0], reverse=True)
+        return [document for _, document in ranked_documents[:limit]]
     ranked = []
     for r in get_learned_rows():
         names = json.loads(r['aliases_json']) + [r['term_name']]

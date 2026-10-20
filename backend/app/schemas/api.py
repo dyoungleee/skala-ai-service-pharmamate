@@ -60,6 +60,55 @@ class SaveStudyRecordResponse(BaseModel):
     message: str
 
 
+class CreateSessionResponse(BaseModel):
+    session_id: str
+    access_token: str
+    created_at: str
+
+
+class SessionArticleUpdateRequest(BaseModel):
+    article: ArticleAnalyzeResponse
+    selected_term_key: str = Field(default="", max_length=120)
+
+
+class SessionTurn(BaseModel):
+    question: str
+    answer: str
+    term_key: str = ""
+    term_name: str = ""
+    related_to_selected: bool = False
+    route: str = ""
+    sources: list[dict[str, str]] = Field(default_factory=list)
+    recommendations: list[LearningQuestion] = Field(default_factory=list)
+    validation_status: str = ""
+    validation_retries: int = 0
+    created_at: str
+
+
+class SessionSnapshot(BaseModel):
+    session_id: str
+    article: ArticleAnalyzeResponse | None = None
+    selected_term_key: str = ""
+    turns: list[SessionTurn] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class SaveSessionStudyRecordRequest(BaseModel):
+    term: PharmaTerm
+    note: str = Field(default="", max_length=8000)
+
+
+class SessionStudyRecordSummary(BaseModel):
+    term_key: str
+    term_name: str
+    category: str
+    simple_definition: str
+    note: str
+    qa_count: int
+    updated_at: str
+
+
 class StudyRecordSummary(BaseModel):
     term_key: str
     term_name: str

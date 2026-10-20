@@ -31,6 +31,9 @@ a { color: inherit; }
 .topbar-right { display: flex; align-items: center; gap: 22px; font-size: 12px; color: var(--muted); }
 .local-indicator { display: inline-flex; align-items: center; gap: 7px; }
 .local-indicator i { width: 7px; height: 7px; border-radius: 50%; background: #42a882; box-shadow: 0 0 0 3px #e2f4ec; }
+.session-select { max-width: 210px; border: 1px solid #e2e8e9; border-radius: 7px; padding: 6px 7px; color: #64747d; background: #fff; font-size: 10px; }
+.new-session-button { border: 1px solid #d5e8df; border-radius: 7px; padding: 6px 9px; color: #28745c; background: #f4faf6; font-size: 10px; white-space: nowrap; }
+.new-session-button:hover:not(:disabled) { background: #e8f5ee; }
 .docs-link { text-decoration: none; color: #5b6b77; }
 .docs-link:hover { color: var(--green); }
 
@@ -170,9 +173,11 @@ a { color: inherit; }
 }
 @media (max-width: 620px) {
   .app-shell { width: calc(100% - 24px); }
-  .topbar { height: 62px; }
-  .topbar-right { gap: 10px; font-size: 10px; }
+  .topbar { height: auto; min-height: 62px; flex-wrap: wrap; padding: 9px 0; row-gap: 8px; }
+  .topbar-right { width: 100%; justify-content: flex-end; gap: 7px; font-size: 10px; }
   .local-indicator { display: none; }
+  .session-select { max-width: 128px; padding: 5px 4px; font-size: 9px; }
+  .docs-link { display: none; }
   .hero { min-height: 205px; padding: 26px 1px; }
   .hero h1 { font-size: 30px; letter-spacing: -1.2px; }
   .hero-copy { max-width: 275px; font-size: 12px; line-height: 1.7; }

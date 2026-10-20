@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -15,12 +15,18 @@ from backend.app.schemas.api import (
     ArticleAnalyzeResponse,
     ChatRequest,
     ChatResponse,
+    CreateSessionResponse,
+    SaveSessionStudyRecordRequest,
     SaveStudyRecordRequest,
     SaveStudyRecordResponse,
+    SessionArticleUpdateRequest,
+    SessionSnapshot,
+    SessionStudyRecordSummary,
     StudyRecordSummary,
 )
 from backend.app.services.article_analysis import analyze_article
 from backend.app.services.article_extraction import article_id_for, load_article
+from backend.app.services.session_service import can_access_session, create_anonymous_session
 
 
 app = FastAPI(
@@ -44,9 +50,74 @@ def runtime_dependency() -> PharmaMateRuntime:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+def require_session_access(session_id: str, authorization: str | None) -> None:
+    try:
+        allowed = can_access_session(session_id, authorization)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="세션 저장소를 사용할 수 없습니다.") from exc
+    if not allowed:
+        # Missing, unknown, and invalid credentials share the same response.
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+
+
+def session_snapshot(session_id: str) -> SessionSnapshot:
+    session = repository.get_study_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    article = session.get("active_article") or None
+    return SessionSnapshot(
+        session_id=session_id,
+        article=article,
+        selected_term_key=session.get("selected_term_key", ""),
+        turns=repository.get_session_turns(session_id),
+        created_at=session["created_at"],
+        updated_at=session["updated_at"],
+    )
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "pharmamate-api"}
+
+
+@app.post("/api/sessions", response_model=CreateSessionResponse)
+def create_session_endpoint(
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> CreateSessionResponse:
+    del runtime
+    session_id, access_token, created_at = create_anonymous_session()
+    return CreateSessionResponse(
+        session_id=session_id, access_token=access_token, created_at=created_at
+    )
+
+
+@app.get("/api/sessions/{session_id}", response_model=SessionSnapshot)
+def get_session_endpoint(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> SessionSnapshot:
+    del runtime
+    require_session_access(session_id, authorization)
+    return session_snapshot(session_id)
+
+
+@app.put("/api/sessions/{session_id}/article", response_model=SessionSnapshot)
+def save_session_article_endpoint(
+    session_id: str,
+    request: SessionArticleUpdateRequest,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> SessionSnapshot:
+    del runtime
+    require_session_access(session_id, authorization)
+    article = request.article.model_dump()
+    selected_term_key = repository.normalize_term(request.selected_term_key)
+    try:
+        repository.save_session_article(session_id, article, selected_term_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.") from exc
+    return session_snapshot(session_id)
 
 
 @app.post("/api/articles/analyze", response_model=ArticleAnalyzeResponse)
@@ -145,21 +216,27 @@ def save_study_record_endpoint(
     )
 
 
-@app.post("/api/chat/stream")
-async def chat_stream_endpoint(
+async def build_chat_stream(
     request: ChatRequest,
-    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+    runtime: PharmaMateRuntime,
+    session_id: str = "",
 ) -> StreamingResponse:
-    history = "\n".join(
-        f"사용자: {item.question}\nAI: {item.answer[:800]}"
-        for item in request.history[-6:]
+    session = repository.get_study_session(session_id) if session_id else None
+    turns = repository.get_session_turns(session_id, limit=6) if session_id else []
+    history_items = (
+        [(turn["question"], turn["answer"]) for turn in turns[-6:]]
+        if session_id else [(item.question, item.answer) for item in request.history[-6:]]
     )
+    history = "\n".join(f"사용자: {question}\nAI: {answer[:800]}" for question, answer in history_items)
+    article = (session or {}).get("active_article") or {}
     agent_input = {
         "question": request.question.strip(),
-        "article": request.article,
+        "article": article.get("article", "") if session_id else request.article,
         "term": request.term,
         "history": history,
     }
+    if session_id:
+        agent_input["owner_id"] = session_id
 
     async def events():
         yield sse_event("status", {"stage": "started", "message": "질문을 확인합니다."})
@@ -189,6 +266,21 @@ async def chat_stream_endpoint(
             if not answer:
                 yield sse_event("error", {"message": "Agent가 답변을 반환하지 않았습니다."})
                 return
+            if session_id:
+                selected_term_name = request.term.splitlines()[0].strip() if request.term.strip() else ""
+                repository.append_session_turn(session_id, {
+                    "question": request.question.strip(),
+                    "answer": answer,
+                    "term_key": repository.normalize_term(selected_term_name),
+                    "term_name": selected_term_name,
+                    "article_id": str(article.get("article_id") or ""),
+                    "related_to_selected": bool(final_state.get("related_to_selected", False)),
+                    "route": str(final_state.get("route") or ""),
+                    "sources": final_state.get("sources") or [],
+                    "recommendations": final_state.get("recommendations") or [],
+                    "validation_status": str(final_state.get("validation_status") or ""),
+                    "validation_retries": int(final_state.get("validation_retries") or 0),
+                })
             # 검증 전 초안은 내보내지 않습니다. 검증이 끝난 답변만 짧은 조각으로 전달합니다.
             for offset in range(0, len(answer), 48):
                 yield sse_event("token", {"text": answer[offset:offset + 48]})
@@ -208,6 +300,67 @@ async def chat_stream_endpoint(
         events(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(
+    request: ChatRequest,
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> StreamingResponse:
+    return await build_chat_stream(request, runtime)
+
+
+@app.post("/api/sessions/{session_id}/chat/stream")
+async def session_chat_stream_endpoint(
+    session_id: str,
+    request: ChatRequest,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> StreamingResponse:
+    require_session_access(session_id, authorization)
+    return await build_chat_stream(request, runtime, session_id)
+
+
+@app.get(
+    "/api/sessions/{session_id}/study-records",
+    response_model=list[SessionStudyRecordSummary],
+)
+def session_study_records_endpoint(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> list[SessionStudyRecordSummary]:
+    del runtime
+    require_session_access(session_id, authorization)
+    return [SessionStudyRecordSummary(**row) for row in repository.get_session_study_records(session_id)]
+
+
+@app.post(
+    "/api/sessions/{session_id}/study-records",
+    response_model=SaveStudyRecordResponse,
+)
+def save_session_study_record_endpoint(
+    session_id: str,
+    request: SaveSessionStudyRecordRequest,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> SaveStudyRecordResponse:
+    del runtime
+    require_session_access(session_id, authorization)
+    try:
+        saved_key, new_count, matched_count = repository.save_session_study_record(
+            session_id, request.term.model_dump(), request.note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.") from exc
+    return SaveStudyRecordResponse(
+        term_key=saved_key,
+        new_questions=new_count,
+        matched_questions=matched_count,
+        message=f"학습 기록 저장 완료: 신규 Q&A {new_count}건",
     )
 
 

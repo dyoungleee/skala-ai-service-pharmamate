@@ -203,10 +203,10 @@ def _refresh_persistent_index(owner_id: str, provider: EmbeddingProvider) -> lis
 
 def search_study_memory(question: str, limit: int = 5, owner_id: str = DEFAULT_OWNER_ID,
                         embedding_provider: EmbeddingProvider | None = None) -> list[dict]:
-    """Retrieve local memories semantically; fall back to existing lexical search on API failure."""
+    """Retrieve memories inside the local or authenticated session scope."""
     if not question.strip() or limit <= 0:
         return []
-    if owner_id != DEFAULT_OWNER_ID:
+    if owner_id != DEFAULT_OWNER_ID and not repository.session_exists(owner_id):
         return []
     documents = repository.get_memory_documents(owner_id)
     if not documents:
@@ -218,4 +218,4 @@ def search_study_memory(question: str, limit: int = 5, owner_id: str = DEFAULT_O
         return _rank_chunks(rows, query_vector, limit, 0.20, question)
     except Exception as exc:
         logger.warning("Semantic memory retrieval failed (%s); using lexical fallback", type(exc).__name__)
-        return repository.search_study_memory(question, limit)
+        return repository.search_study_memory(question, limit, owner_id=owner_id)

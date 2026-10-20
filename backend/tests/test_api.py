@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from backend.app.main import app, runtime_dependency
 from backend.app.db import repository
 from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
 from backend.app.services.recommendations import fallback_recommendations
+from backend.app.retrieval.service import search_study_memory
 
 
 class FakeArticleChain:
@@ -73,14 +75,34 @@ class FakeRuntime:
         self.agent_graph = FakeGraph()
 
 
+class FixedEmbeddings:
+    model_name = "fixed-test-embeddings"
+
+    def embed_documents(self, texts):
+        return [[1.0, 0.0] for _ in texts]
+
+    def embed_query(self, text):
+        return [1.0, 0.0]
+
+
+class BrokenEmbeddings(FixedEmbeddings):
+    def embed_documents(self, texts):
+        raise RuntimeError("synthetic embedding outage")
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
+        self.previous_db_path = repository.DB_PATH
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="pharmamate-api-test-")
+        repository.configure_database(self.temp_dir.name)
         self.runtime = FakeRuntime()
         app.dependency_overrides[runtime_dependency] = lambda: self.runtime
         self.client = TestClient(app)
 
     def tearDown(self):
         app.dependency_overrides.clear()
+        repository.DB_PATH = self.previous_db_path
+        self.temp_dir.cleanup()
 
     def test_health_does_not_load_keys_or_database(self):
         response = self.client.get("/api/health")
@@ -154,6 +176,98 @@ class ApiTests(unittest.TestCase):
         saved_state = save.call_args.args[1]
         self.assertEqual(saved_state["history"][0]["linked_term_key"], "adc")
         self.assertEqual(saved_state["history"][1]["linked_term_key"], "")
+
+    def test_anonymous_session_restores_article_and_chat_only_with_its_token(self):
+        created = self.client.post("/api/sessions")
+        self.assertEqual(created.status_code, 200)
+        session = created.json()
+        session_id = session["session_id"]
+        token = session["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        self.assertNotIn(token, repository.get_study_session(session_id)["token_hash"])
+        self.assertEqual(self.client.get(f"/api/sessions/{session_id}").status_code, 404)
+        self.assertEqual(self.client.get(
+            f"/api/sessions/{session_id}", headers={"Authorization": "Bearer wrong-token"}
+        ).status_code, 404)
+
+        analyzed = self.client.post("/api/articles/analyze", json={
+            "pasted_text": "가상 기사에서 임상 1상 계획을 설명합니다. " * 10,
+        }).json()
+        saved_article = self.client.put(
+            f"/api/sessions/{session_id}/article",
+            headers=headers,
+            json={"article": analyzed, "selected_term_key": "임상 1상"},
+        )
+        self.assertEqual(saved_article.status_code, 200)
+
+        with self.client.stream(
+            "POST", f"/api/sessions/{session_id}/chat/stream", headers=headers,
+            json={"question": "임상 1상에서 무엇을 확인해?", "term": "임상 1상\n안전성을 살핍니다."},
+        ) as response:
+            body = "".join(response.iter_text())
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("검증된 답변", body)
+        self.assertEqual(self.runtime.agent_graph.payload["owner_id"], session_id)
+        self.assertEqual(self.runtime.agent_graph.payload["article"], analyzed["article"])
+
+        restored = self.client.get(f"/api/sessions/{session_id}", headers=headers)
+        self.assertEqual(restored.status_code, 200)
+        snapshot = restored.json()
+        self.assertEqual(snapshot["article"]["article_id"], analyzed["article_id"])
+        self.assertEqual(len(snapshot["turns"]), 1)
+        self.assertEqual(snapshot["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
+
+        second = self.client.post("/api/sessions").json()
+        other = self.client.get(
+            f"/api/sessions/{second['session_id']}",
+            headers={"Authorization": f"Bearer {second['access_token']}"},
+        ).json()
+        self.assertIsNone(other["article"])
+        self.assertEqual(other["turns"], [])
+
+    def test_session_learning_memory_is_private_and_saves_only_relevant_turns(self):
+        first = self.client.post("/api/sessions").json()
+        second = self.client.post("/api/sessions").json()
+        headers = {"Authorization": f"Bearer {first['access_token']}"}
+        article = self.client.post("/api/articles/analyze", json={
+            "pasted_text": "가상 기사에서 임상 1상 계획을 설명합니다. " * 10,
+        }).json()
+        self.client.put(f"/api/sessions/{first['session_id']}/article", headers=headers,
+                        json={"article": article, "selected_term_key": "임상 1상"})
+        with self.client.stream(
+            "POST", f"/api/sessions/{first['session_id']}/chat/stream", headers=headers,
+            json={"question": "임상 1상에서 무엇을 확인해?", "term": "임상 1상"},
+        ) as response:
+            list(response.iter_text())
+        term = article["analysis"]["key_terms"][0]
+        saved = self.client.post(
+            f"/api/sessions/{first['session_id']}/study-records",
+            headers=headers,
+            json={"term": term, "note": "안전성과 내약성을 우선 살핍니다."},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["new_questions"], 1)
+        records = self.client.get(
+            f"/api/sessions/{first['session_id']}/study-records", headers=headers
+        ).json()
+        self.assertEqual(records[0]["qa_count"], 1)
+
+        first_memory = search_study_memory(
+            "임상 1상 안전성", owner_id=first["session_id"], embedding_provider=FixedEmbeddings()
+        )
+        second_memory = search_study_memory(
+            "임상 1상 안전성", owner_id=second["session_id"], embedding_provider=FixedEmbeddings()
+        )
+        self.assertTrue(first_memory)
+        self.assertEqual(second_memory, [])
+        first_fallback = search_study_memory(
+            "임상 1상 안전성", owner_id=first["session_id"], embedding_provider=BrokenEmbeddings()
+        )
+        second_fallback = search_study_memory(
+            "임상 1상 안전성", owner_id=second["session_id"], embedding_provider=BrokenEmbeddings()
+        )
+        self.assertTrue(first_fallback)
+        self.assertEqual(second_fallback, [])
 
 
 if __name__ == "__main__":

@@ -10,12 +10,17 @@ const question = ref('')
 const messages = ref([])
 const studyNote = ref('')
 const studyRecords = ref([])
+const sessionChoices = ref([])
+const sessionId = ref('')
+const sessionToken = ref('')
+const sessionReady = ref(false)
 const busy = ref(false)
 const currentStatus = ref('')
 const errorMessage = ref('')
 const saveMessage = ref('')
 const chatPanel = ref(null)
 let activeController = null
+const SESSION_STORAGE_KEY = 'pharmamate.sessions.v1'
 
 const terms = computed(() => articleResult.value?.analysis?.key_terms ?? [])
 const currentTerm = computed(() => terms.value.find((item) => item.term === selectedTerm.value) ?? null)
@@ -32,8 +37,139 @@ async function requestJson(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
   })
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || `요청 실패 (${response.status})`)
+  if (!response.ok) {
+    const error = new Error(payload.detail || `요청 실패 (${response.status})`)
+    error.status = response.status
+    throw error
+  }
   return payload
+}
+
+async function sessionRequest(path, options = {}) {
+  return requestJson(path, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${sessionToken.value}`,
+      ...(options.headers ?? {}),
+    },
+  })
+}
+
+function persistSessionChoices() {
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessionChoices.value))
+}
+
+function termStorageKey(value) {
+  const term = String(value || '').trim()
+  const acronyms = [...term.matchAll(/\(([A-Za-z][A-Za-z0-9+-]{1,15})\)/g)]
+  if (acronyms.length) return acronyms.at(-1)[1].toLowerCase()
+  if (/^[A-Za-z][A-Za-z0-9+-]{1,15}$/.test(term)) return term.toLowerCase()
+  return term.replace(/[\s_-]+/g, '').toLowerCase()
+}
+
+function restoreSnapshot(snapshot) {
+  articleResult.value = snapshot.article
+  const savedTerm = snapshot.turns.at(-1)?.term_name
+  const selectedByKey = terms.value.find((term) => termStorageKey(term.term) === snapshot.selected_term_key)?.term
+  selectedTerm.value = terms.value.some((term) => term.term === savedTerm)
+    ? savedTerm
+    : selectedByKey ?? terms.value[0]?.term ?? ''
+  messages.value = snapshot.turns.flatMap((turn) => [
+    { role: 'user', content: turn.question },
+    {
+      role: 'assistant', content: turn.answer, sources: turn.sources,
+      recommendations: turn.recommendations, route: turn.route,
+      relatedToSelected: turn.related_to_selected, selectedTerm: turn.term_name,
+      validationStatus: turn.validation_status, validationRetries: turn.validation_retries,
+    },
+  ])
+  studyNote.value = ''
+  saveMessage.value = ''
+}
+
+async function activateSession(credentials) {
+  sessionId.value = credentials.session_id
+  sessionToken.value = credentials.access_token
+  const snapshot = await sessionRequest(`/api/sessions/${sessionId.value}`)
+  sessionChoices.value = [credentials, ...sessionChoices.value.filter((item) => item.session_id !== credentials.session_id)]
+  persistSessionChoices()
+  restoreSnapshot(snapshot)
+  await refreshRecords()
+  currentStatus.value = '저장된 학습 세션을 불러왔습니다.'
+}
+
+async function createSession() {
+  const created = await requestJson('/api/sessions', { method: 'POST', body: '{}' })
+  const credentials = {
+    session_id: created.session_id,
+    access_token: created.access_token,
+    created_at: created.created_at,
+  }
+  sessionChoices.value = [credentials, ...sessionChoices.value.filter((item) => item.session_id !== credentials.session_id)]
+  persistSessionChoices()
+  await activateSession(credentials)
+}
+
+async function initializeSession() {
+  currentStatus.value = '저장된 학습 세션을 확인합니다.'
+  try {
+    try {
+      const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || '[]')
+      sessionChoices.value = Array.isArray(stored)
+        ? stored.filter((item) => item?.session_id && item?.access_token)
+        : []
+    } catch {
+      sessionChoices.value = []
+      localStorage.removeItem(SESSION_STORAGE_KEY)
+    }
+    for (const credentials of [...sessionChoices.value]) {
+      try {
+        await activateSession(credentials)
+        return
+      } catch (error) {
+        if (error.status !== 404) throw error
+        sessionChoices.value = sessionChoices.value.filter((item) => item.session_id !== credentials.session_id)
+      }
+    }
+    persistSessionChoices()
+    await createSession()
+  } catch (error) {
+    errorMessage.value = error.message
+    currentStatus.value = ''
+  } finally {
+    sessionReady.value = true
+  }
+}
+
+async function switchSession(nextSessionId) {
+  const credentials = sessionChoices.value.find((item) => item.session_id === nextSessionId)
+  if (!credentials || busy.value) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    await activateSession(credentials)
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    busy.value = false
+  }
+}
+
+async function startNewSession() {
+  if (busy.value) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    await createSession()
+    url.value = ''
+    manualTitle.value = ''
+    pastedText.value = ''
+    currentStatus.value = '새 학습 세션을 시작했습니다.'
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    busy.value = false
+  }
 }
 
 async function analyzeArticle() {
@@ -46,11 +182,17 @@ async function analyzeArticle() {
   busy.value = true
   currentStatus.value = '기사를 분석합니다.'
   try {
-    articleResult.value = await requestJson('/api/articles/analyze', {
+    const analyzed = await requestJson('/api/articles/analyze', {
       method: 'POST',
       body: JSON.stringify({ url: url.value, pasted_text: pastedText.value, title: manualTitle.value }),
     })
-    selectedTerm.value = terms.value[0]?.term ?? ''
+    const firstTerm = analyzed.analysis.key_terms[0]?.term ?? ''
+    await sessionRequest(`/api/sessions/${sessionId.value}/article`, {
+      method: 'PUT',
+      body: JSON.stringify({ article: analyzed, selected_term_key: firstTerm }),
+    })
+    articleResult.value = analyzed
+    selectedTerm.value = firstTerm
     messages.value = []
     studyNote.value = ''
     currentStatus.value = '기사 분석이 완료됐습니다.'
@@ -61,22 +203,6 @@ async function analyzeArticle() {
   } finally {
     busy.value = false
   }
-}
-
-function chatHistory() {
-  const history = []
-  for (let index = 0; index < messages.value.length - 1; index += 1) {
-    const user = messages.value[index]
-    const assistant = messages.value[index + 1]
-    if (user.role === 'user' && assistant.role === 'assistant' && assistant.content) {
-      history.push({
-        question: user.content,
-        answer: assistant.content.slice(0, 6000),
-        linked_to_selected: Boolean(assistant.relatedToSelected && assistant.selectedTerm === currentTerm.value?.term),
-      })
-    }
-  }
-  return history.slice(-12)
 }
 
 function handleSseEvent(name, data, assistantMessage) {
@@ -133,7 +259,7 @@ async function consumeSse(response, assistantMessage) {
 
 async function sendQuestion() {
   const asked = question.value.trim()
-  if (!asked || busy.value) return
+  if (!asked || busy.value || !sessionReady.value || !sessionId.value) return
   errorMessage.value = ''
   saveMessage.value = ''
   const selected = currentTerm.value
@@ -148,14 +274,15 @@ async function sendQuestion() {
   activeController = new AbortController()
   currentStatus.value = '질문을 처리합니다.'
   try {
-    const response = await fetch('/api/chat/stream', {
+    const response = await fetch(`/api/sessions/${sessionId.value}/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionToken.value}`,
+      },
       body: JSON.stringify({
         question: asked,
-        article: articleResult.value?.article ?? '',
         term: selected ? `${selected.term}\n${selected.simple_definition}\n${selected.article_context}` : '',
-        history: chatHistory(),
       }),
       signal: activeController.signal,
     })
@@ -194,14 +321,11 @@ async function saveStudyRecord() {
   errorMessage.value = ''
   saveMessage.value = ''
   try {
-    const result = await requestJson('/api/study-records', {
+    const result = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`, {
       method: 'POST',
       body: JSON.stringify({
         term: currentTerm.value,
-        article_id: articleResult.value.article_id,
-        article_url: articleResult.value.url,
         note: studyNote.value,
-        history: chatHistory(),
       }),
     })
     saveMessage.value = result.message
@@ -212,14 +336,15 @@ async function saveStudyRecord() {
 }
 
 async function refreshRecords() {
+  if (!sessionId.value) return
   try {
-    studyRecords.value = await requestJson('/api/study-records')
+    studyRecords.value = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`)
   } catch {
-    // Records are optional until the API has loaded local settings and the DB.
+    studyRecords.value = []
   }
 }
 
-refreshRecords()
+initializeSession()
 </script>
 
 <template>
@@ -230,7 +355,13 @@ refreshRecords()
         <span>PharmaMate <small>3.0</small></span>
       </a>
       <div class="topbar-right">
-        <span class="local-indicator"><i></i> 로컬 학습 공간</span>
+        <span class="local-indicator"><i></i> 세션별 로컬 저장</span>
+        <select v-if="sessionChoices.length" v-model="sessionId" class="session-select" aria-label="학습 세션 선택" :disabled="busy" @change="switchSession($event.target.value)">
+          <option v-for="session in sessionChoices" :key="session.session_id" :value="session.session_id">
+            세션 · {{ new Date(session.created_at).toLocaleString('ko-KR') }}
+          </option>
+        </select>
+        <button class="new-session-button" :disabled="busy || !sessionReady" @click="startNewSession">새 세션 +</button>
         <a class="docs-link" href="http://127.0.0.1:8000/docs" target="_blank" rel="noreferrer">API 문서 ↗</a>
       </div>
     </header>
@@ -263,7 +394,7 @@ refreshRecords()
           </details>
           <label class="field-label" for="article-title">표시 제목 <span>선택</span></label>
           <input id="article-title" v-model="manualTitle" class="text-input" type="text" placeholder="기사 제목을 입력하세요" />
-          <button class="button button-primary button-wide" :disabled="busy" @click="analyzeArticle">
+          <button class="button button-primary button-wide" :disabled="busy || !sessionReady || !sessionId" @click="analyzeArticle">
             <span v-if="busy && !messages.length" class="spinner"></span>
             기사 분석하기 <span aria-hidden="true">→</span>
           </button>
@@ -308,7 +439,7 @@ refreshRecords()
         <section class="card chat-card">
           <div class="section-heading">
             <div><p class="eyebrow">02 · AI TUTOR</p><h2>자유롭게 질문하기</h2></div>
-            <button class="icon-button" title="대화 지우기" :disabled="busy" @click="messages = []; saveMessage = ''">↺</button>
+            <button class="icon-button" title="새 학습 세션" :disabled="busy || !sessionReady" @click="startNewSession">＋</button>
           </div>
           <p class="card-intro">기사 내용과 {{ currentTerm ? '선택한 용어' : '제약·바이오 개념' }}를 바탕으로 답변합니다.</p>
           <div ref="chatPanel" class="chat-panel" aria-live="polite">
@@ -356,12 +487,12 @@ refreshRecords()
             <div v-if="busy" class="live-status"><span class="pulse-dot"></span>{{ currentStatus || '응답을 준비합니다.' }}</div>
           </div>
           <form class="composer" @submit.prevent="sendQuestion">
-            <textarea id="question-input" v-model="question" rows="2" :disabled="busy" placeholder="궁금한 점을 입력하세요…"></textarea>
+            <textarea id="question-input" v-model="question" rows="2" :disabled="busy || !sessionReady" placeholder="궁금한 점을 입력하세요…"></textarea>
             <div class="composer-footer">
               <span>{{ selectedTerm ? `선택 용어 · ${selectedTerm}` : '기사와 일반 개념을 모두 질문할 수 있어요' }}</span>
               <div>
                 <button v-if="busy" class="button button-quiet" type="button" @click="cancelResponse">중단</button>
-                <button class="send-button" type="submit" :disabled="busy || !question.trim()" aria-label="질문 보내기">↑</button>
+                <button class="send-button" type="submit" :disabled="busy || !sessionReady || !question.trim()" aria-label="질문 보내기">↑</button>
               </div>
             </div>
           </form>
@@ -389,8 +520,8 @@ refreshRecords()
           <div v-if="studyRecords.length" class="record-list">
             <div v-for="record in studyRecords.slice(0, 5)" :key="record.term_key" class="record-item">
               <span class="record-dot"></span>
-              <div><strong>{{ record.term_name }}</strong><p>{{ record.simple_definition }}</p></div>
-              <span class="review-count">{{ record.review_count }}회</span>
+              <div><strong>{{ record.term_name }}</strong><p>{{ record.note || record.simple_definition }}</p></div>
+              <span class="review-count">Q&A {{ record.qa_count }}</span>
             </div>
           </div>
           <p v-else class="records-empty">저장된 용어가 없습니다. 기사를 분석하고 학습 기록을 저장해 보세요.</p>
