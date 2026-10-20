@@ -226,7 +226,11 @@ async def build_chat_stream(
     session_id: str = "",
 ) -> StreamingResponse:
     session = repository.get_study_session(session_id) if session_id else None
-    turns = repository.get_session_turns(session_id, limit=6) if session_id else []
+    selected_term_name = request.term.splitlines()[0].strip() if request.term.strip() else ""
+    selected_term_key = repository.normalize_term(selected_term_name)
+    turns = repository.get_session_turns(
+        session_id, limit=6, term_key=selected_term_key
+    ) if session_id else []
     history_items = (
         [(turn["question"], turn["answer"]) for turn in turns[-6:]]
         if session_id else [(item.question, item.answer) for item in request.history[-6:]]
@@ -271,7 +275,6 @@ async def build_chat_stream(
                 yield sse_event("error", {"message": "Agent가 답변을 반환하지 않았습니다."})
                 return
             if session_id:
-                selected_term_name = request.term.splitlines()[0].strip() if request.term.strip() else ""
                 repository.append_session_turn(session_id, {
                     "question": request.question.strip(),
                     "answer": answer,

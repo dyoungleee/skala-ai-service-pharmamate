@@ -87,6 +87,8 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
     answer_prompt = ChatPromptTemplate.from_messages([
         ("system", """당신은 제약·바이오 기사 학습 튜터입니다. 사용자는 비전공자입니다.
 답변은 질문에 필요한 핵심부터 쉽게 설명하고, 가능한 경우 현재 기사의 표현과 연결합니다.
+사용자가 기전·메커니즘·작동 원리를 물으면 막연한 정의로 끝내지 말고, 원인에서 결과까지의 인과 단계를 3~6개로 나눠 설명합니다. 단계마다 무엇이 무엇과 상호작용하는지, 세포 안팎에서 무엇이 바뀌는지, 그 변화가 어떤 결과로 이어지는지 밝힙니다. 관련 생물학 용어는 바로 쉬운 말로 풀이합니다.
+기사에서 확인되지 않는 안정적인 기초과학·약리 기전은 일반 배경지식으로 표시해 설명할 수 있습니다. 이를 해당 기사의 실험 결과나 임상 효과로 표현하지 않습니다.
 선택한 용어와 상관없는 용어를 질문하면 반드시 질문한 용어에 답하세요. 선택 용어를 억지로 연관시키지 마세요.
 [안전 및 근거 규칙]
 - 기사 내용과 일반 배경지식, 웹 검색 결과를 명확하게 구분합니다.
@@ -124,6 +126,10 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
         ("system", """당신은 제약·바이오 기사 학습 튜터입니다. 먼저 질문에 직접 답한 뒤, 다음 학습으로 이어지는 질문을 함께 만드세요.
 답변 규칙:
 - 비전공자가 이해할 수 있게 핵심부터 설명하고, 기사·학습 기록·웹 근거와 일반 배경을 구분합니다.
+- 사용자가 기전·메커니즘·작동 원리를 물으면 3~6단계의 인과 흐름으로 설명합니다: 시작 신호/표적 → 분자·세포 상호작용 → 세포 안의 변화 → 관찰 가능한 결과. 용어만 나열하지 말고 단계 간 원인과 결과를 연결합니다.
+- 일반 배경지식만으로 설명하는 기초 기전은 답변에 “일반 배경지식”이라고 표시합니다. 기사에 해당 기전이 나오지 않았다면 기사에서 검증된 결과인 것처럼 말하지 않습니다.
+- 질문이 비유를 요청하면 짧은 비유를 들고, 비유와 실제 생물학적 과정의 대응 관계 및 비유의 한계를 설명합니다.
+- 질문이 비교를 요청하면 공통점, 핵심 차이, 각 개념이 쓰이는 맥락을 나눠 설명합니다.
 - 근거 없는 최신 승인·임상·투자 정보, 수치와 개인 치료 조언을 단정하지 않습니다.
 - 시험의 설계·목적과 실제 결과를 구분하고, 자료에 없는 결과를 만들지 않습니다.
 - 출처에 나온 사실을 회사 주장이나 검증된 결과와 구분합니다.
@@ -134,6 +140,7 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
 추천 질문 규칙:
 - '원리 심화', '다른 개념과 연결', '한계·응용 탐구' 범주로 하나씩 정확히 3개를 작성합니다.
 - 각 질문에는 명확한 학습 목표를 한 문장으로 붙입니다.
+- 직전 질문에 대한 자연스러운 후속 질문으로 만듭니다. 직전 답변에서 새로 등장한 원리·용어·비교점을 구체적으로 이어가고, 누구에게나 붙일 수 있는 범용 질문은 피합니다.
 - 현재 질문·답변·기사·학습 기록·대화 맥락에 연결하고, 이미 답한 질문은 반복하지 않습니다.
 - 질문 자체가 최신 임상 결과나 치료 효과를 사실로 전제하지 않도록 합니다."""),
         ("human", """[현재 기사 - 필요한 경우만 참고]
@@ -264,13 +271,15 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
             generated_recommendations = [item.model_dump() for item in turn.recommendations]
             recommendations = recommend_learning_questions(
                 lambda _context: {"recommendations": generated_recommendations},
+                term=(state.get("term", "").splitlines() or [""])[0],
                 question=state["question"],
                 answer=answer,
             )
         except Exception:
             # 구조화 답변을 지원하지 않는 모델에서도 답변을 보존합니다.
             answer = answer_chain.invoke(payload)
-            recommendations = fallback_recommendations()
+            term_name = (state.get("term", "").splitlines() or [""])[0]
+            recommendations = fallback_recommendations(term_name, state["question"], answer)
         sources = []
         seen_sources = set()
         for source in list(state.get("memory_sources", [])) + list(state.get("sources", [])):

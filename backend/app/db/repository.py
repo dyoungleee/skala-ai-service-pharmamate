@@ -269,10 +269,21 @@ def append_session_turn(session_id: str, turn: dict) -> None:
             WHERE session_id=?""", (turn.get("term_key", ""), created_at, session_id))
 
 
-def get_session_turns(session_id: str, limit: int = 100) -> list[dict]:
+def get_session_turns(
+    session_id: str,
+    limit: int = 100,
+    term_key: str | None = None,
+) -> list[dict]:
+    """Load turns for a session, optionally isolating one term's tutor thread."""
     with connect_db() as conn:
-        rows = conn.execute("""SELECT * FROM session_turns WHERE session_id=?
-            ORDER BY created_at DESC, turn_id DESC LIMIT ?""", (session_id, max(0, min(limit, 200)))).fetchall()
+        if term_key is None:
+            rows = conn.execute("""SELECT * FROM session_turns WHERE session_id=?
+                ORDER BY created_at DESC, turn_id DESC LIMIT ?""",
+                (session_id, max(0, min(limit, 200)))).fetchall()
+        else:
+            rows = conn.execute("""SELECT * FROM session_turns WHERE session_id=? AND term_key=?
+                ORDER BY created_at DESC, turn_id DESC LIMIT ?""",
+                (session_id, term_key, max(0, min(limit, 200)))).fetchall()
     turns = []
     for row in reversed(rows):
         item = dict(row)

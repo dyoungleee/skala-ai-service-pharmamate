@@ -38,9 +38,33 @@ def _question_key(value: str) -> str:
     return re.sub(r"[^a-z0-9가-힣]+", "", value.casefold())
 
 
-def fallback_recommendations(term: str = "") -> list[dict[str, str]]:
-    """추천 모델 장애 시에도 세 가지 다른 학습 방향을 유지합니다."""
-    topic = _clean(term, 48) or "방금 답변에서 다룬 내용"
+def fallback_recommendations(
+    term: str = "",
+    question: str = "",
+    answer: str = "",
+) -> list[dict[str, str]]:
+    """Keep useful recommendations available when generation fails."""
+    topic = _clean(term, 48)
+    if question.strip() or answer.strip():
+        followup_topic = topic or "개념"
+        return [
+            {
+                "category": "원리 심화",
+                "question": f"방금 답변에서 설명한 {followup_topic}의 원인과 결과를 단계별로 다시 정리해줘.",
+                "learning_goal": "직전 답변의 인과 흐름을 더 분명히 이해합니다.",
+            },
+            {
+                "category": "다른 개념과 연결",
+                "question": f"방금 설명한 {followup_topic}와 가장 비슷한 개념은 무엇이고, 핵심 차이는 뭐야?",
+                "learning_goal": "직전 답변의 개념을 유사 개념과 비교합니다.",
+            },
+            {
+                "category": "한계·응용 탐구",
+                "question": "방금 설명에서 기사로 확인된 내용과 일반 배경지식은 각각 어디까지야?",
+                "learning_goal": "직전 설명의 근거와 적용 범위를 구분합니다.",
+            },
+        ]
+    topic = topic or "방금 답변에서 다룬 내용"
     return [
         {
             "category": "원리 심화",
@@ -126,7 +150,7 @@ def recommend_learning_questions(
     if current_question:
         prior_questions.append(current_question)
 
-    fallback = fallback_recommendations(term)
+    fallback = fallback_recommendations(term, current_question, answer)
     if generator is None:
         return fallback
 

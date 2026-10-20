@@ -260,6 +260,31 @@ print(json.dumps(response.json(), ensure_ascii=False))
         self.assertIsNone(other["article"])
         self.assertEqual(other["turns"], [])
 
+    def test_session_chat_history_is_isolated_by_selected_term(self):
+        session = self.client.post("/api/sessions").json()
+        session_id = session["session_id"]
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+
+        def ask(question, term):
+            with self.client.stream(
+                "POST", f"/api/sessions/{session_id}/chat/stream", headers=headers,
+                json={"question": question, "term": term},
+            ) as response:
+                list(response.iter_text())
+                self.assertEqual(response.status_code, 200)
+
+        ask("ADC의 표적은 뭐야?", "ADC\n항체 약물 접합체")
+        ask("임상 1상은 무엇을 봐?", "임상 1상\n사람 대상 초기 시험")
+        ask("ADC는 세포 안에서 어떻게 작용해?", "ADC\n항체 약물 접합체")
+
+        self.assertIn("ADC의 표적은 뭐야?", self.runtime.agent_graph.payload["history"])
+        self.assertNotIn("임상 1상은 무엇을 봐?", self.runtime.agent_graph.payload["history"])
+
+        snapshot = self.client.get(
+            f"/api/sessions/{session_id}", headers=headers
+        ).json()
+        self.assertEqual(len(snapshot["turns"]), 3)
+
     def test_session_learning_memory_is_private_and_saves_only_relevant_turns(self):
         first = self.client.post("/api/sessions").json()
         second = self.client.post("/api/sessions").json()

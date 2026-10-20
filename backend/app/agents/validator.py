@@ -29,6 +29,7 @@ _VALIDATION_PROMPT = ChatPromptTemplate.from_messages([
 - 출처에 없는 수치나 출처와 모순되는 주장은 `revise`로 표시하고, 답변에서 해당 주장을 빼거나 근거 부족을 밝히도록 구체적인 수정 지침을 씁니다.
 - 질문의 핵심을 자료에서 확인할 수 없고 단순 삭제로 답할 수 없다면 `insufficient_evidence`를 사용합니다. 불필요한 보조 주장을 지우면 답할 수 있는 경우는 `revise`입니다.
 - 기본 용어 정의와 안정적인 기초 설명은 기사 문맥이 없다는 이유만으로 `insufficient_evidence` 처리하지 않습니다. 최신·임상·수치 주장은 별도 근거가 필요합니다.
+- 기초 생명과학·약리학의 안정적인 작동 기전은 일반 배경지식으로 표시되어 있으면 설명 자체를 기사에서 입증된 주장으로 요구하지 않습니다. 다만 그 기전을 특정 기사 속 후보물질의 임상 효과·안전성으로 연결하는 주장은 기사나 다른 제공 근거가 뒷받침해야 합니다.
 - 기사에 결과가 보고되지 않았다고 적혀 있으면 “결과가 보고되지 않았다”고 답하는 것은 근거에 맞는 설명입니다.
 - 시험의 목적이나 설계가 안전성·유효성을 평가하는 것이라는 사실은 실제 결과가 아닙니다. 결과가 보고되지 않았다면 안전성·내약성·유효성이 확인 또는 입증됐다고 쓰지 않습니다.
 - 자료의 회사 주장·전망을 검증된 사실로 취급하지 않습니다.
@@ -71,7 +72,7 @@ _POSITIVE_OUTCOME = re.compile(
     r"was safe|well tolerated|demonstrated efficacy|improved survival))",
     re.IGNORECASE,
 )
-_GENERAL_QUESTION = re.compile(r"(?:무엇|뭐|뜻|개념|원리|어떻게|차이|달라|설명)")
+_GENERAL_QUESTION = re.compile(r"(?:무엇|뭐|뜻|개념|원리|기전|메커니즘|작동|어떻게|차이|달라|설명)")
 _TIME_SENSITIVE_QUESTION = re.compile(r"(?:최근|현재|최신|오늘|승인|허가|임상|투여|용량|부작용|효과|효능|성공률|생존율|반응률|시장|가격|비용|투자)")
 _HIGH_RISK_GENERAL_CLAIM = re.compile(r"(?:임상|승인|허가|투여|용량|부작용|안전성|유효성|효능|성공률|생존율|반응률|시장|가격|비용|투자|매출|최근|현재|판매)")
 
@@ -103,7 +104,8 @@ def unsupported_outcome_claim(answer: str, evidence: str) -> bool:
 
 def is_unreferenced_general_explanation(question: str, answer: str, evidence: str) -> bool:
     """Allow a narrow class of stable concept explanations without source context."""
-    if evidence.strip() or not _GENERAL_QUESTION.search(question):
+    labeled_background = bool(re.search(r"일반\s*배경\s*지식", answer))
+    if (evidence.strip() and not labeled_background) or not _GENERAL_QUESTION.search(question):
         return False
     if _TIME_SENSITIVE_QUESTION.search(question) or _HIGH_RISK_GENERAL_CLAIM.search(answer):
         return False

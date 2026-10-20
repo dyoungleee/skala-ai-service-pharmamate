@@ -62,15 +62,30 @@ class RecommendationTests(unittest.TestCase):
             term="ADC",
             question="ADC가 뭐야?",
         )
-        self.assertEqual(result, fallback_recommendations("ADC"))
+        self.assertEqual(
+            result,
+            fallback_recommendations("ADC", question="ADC가 뭐야?"),
+        )
         self.assertEqual(len({item["category"] for item in result}), 3)
 
     def test_model_failure_keeps_three_distinct_learning_goals(self):
         def fail(_payload):
             raise TimeoutError("offline")
 
-        result = recommend_learning_questions(fail, term="ADC")
-        self.assertEqual(result, fallback_recommendations("ADC"))
+        result = recommend_learning_questions(
+            fail,
+            term="ADC",
+            question="ADC에서 항체는 어떤 역할을 해?",
+            answer="항체가 표적을 찾아 payload가 전달되도록 돕습니다.",
+        )
+        self.assertEqual(
+            result,
+            fallback_recommendations(
+                "ADC", "ADC에서 항체는 어떤 역할을 해?",
+                "항체가 표적을 찾아 payload가 전달되도록 돕습니다.",
+            ),
+        )
+        self.assertIn("방금 답변", result[0]["question"])
         self.assertEqual(len({item["question"] for item in result}), 3)
 
     def test_markdown_exposes_category_question_and_goal(self):

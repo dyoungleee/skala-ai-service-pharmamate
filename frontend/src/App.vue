@@ -6,8 +6,12 @@ const manualTitle = ref('')
 const pastedText = ref('')
 const articleResult = ref(null)
 const selectedTerm = ref('')
+const tutorTerm = ref('')
 const question = ref('')
 const messages = ref([])
+const chatThreads = ref({})
+const restoredThreadTerms = ref([])
+const activeChatThreadKey = ref('')
 const studyNote = ref('')
 const studyRecords = ref([])
 const readArticles = ref([])
@@ -36,7 +40,29 @@ const steps = [
 const activeStepIndex = computed(() => steps.findIndex((step) => step.id === activeStep.value))
 const terms = computed(() => articleResult.value?.analysis?.key_terms ?? [])
 const currentTerm = computed(() => terms.value.find((item) => item.term === selectedTerm.value) ?? null)
-const canSave = computed(() => Boolean(currentTerm.value && articleResult.value?.article_id && messages.value.some((item) => item.role === 'assistant' && item.content)))
+const tutorTerms = computed(() => {
+  const candidates = [
+    ...terms.value,
+    ...studyRecords.value.map((record) => ({ ...record, term: record.term_name })),
+    ...restoredThreadTerms.value,
+  ]
+  const unique = new Map()
+  for (const item of candidates) {
+    const name = String(item.term || item.term_name || '').trim()
+    const key = termStorageKey(name)
+    if (name && key && !unique.has(key)) unique.set(key, { ...item, term: name })
+  }
+  return [...unique.values()]
+})
+const selectedTutorTerm = computed(() => tutorTerms.value.find(
+  (item) => termStorageKey(item.term) === termStorageKey(tutorTerm.value),
+) ?? null)
+const canSave = computed(() => Boolean(selectedTutorTerm.value && messages.value.some((item) => item.role === 'assistant' && item.content)))
+const starterQuestions = [
+  { label: '쉽게 비유해줘', question: '이 용어를 일상적인 예로 쉽게 비유해줘.' },
+  { label: '기사에서 왜 중요해?', question: '이 용어가 기사에서 왜 중요하게 다뤄졌는지 설명해줘.' },
+  { label: '비슷한 개념과 비교해줘', question: '이 용어와 비슷한 개념의 공통점과 차이를 비교해줘.' },
+]
 const articleSegments = computed(() => {
   const article = articleResult.value?.article ?? ''
   if (!article) return []
@@ -84,6 +110,10 @@ const articleSegments = computed(() => {
 })
 
 watch(messages, async () => {
+  chatThreads.value = {
+    ...chatThreads.value,
+    [activeChatThreadKey.value]: messages.value,
+  }
   await nextTick()
   if (chatPanel.value) chatPanel.value.scrollTop = chatPanel.value.scrollHeight
 }, { deep: true })
@@ -125,7 +155,7 @@ function termStorageKey(value) {
 }
 
 function termAliases(term) {
-  const title = String(term?.term || '')
+  const title = String(term?.term || term?.term_name || '')
   const acronym = title.match(/\(([A-Za-z][A-Za-z0-9+-]{1,15})\)/)?.[1]
   return [...new Set([
     title,
@@ -143,6 +173,33 @@ function isKnownTerm(term) {
     record.term_name,
     ...(record.aliases ?? []),
   ].some((value) => currentKeys.has(termStorageKey(value))))
+}
+
+function switchTutorTerm(termName, force = false) {
+  if (busy.value && !force) return
+  chatThreads.value = {
+    ...chatThreads.value,
+    [activeChatThreadKey.value]: messages.value,
+  }
+  const nextName = String(termName || '')
+  const nextKey = termStorageKey(nextName)
+  activeChatThreadKey.value = nextKey
+  tutorTerm.value = nextName
+  messages.value = [...(chatThreads.value[nextKey] || [])]
+  const matchingTerm = tutorTerms.value.find((item) => termStorageKey(item.term) === nextKey)
+  studyNote.value = matchingTerm?.note || ''
+  saveMessage.value = ''
+}
+
+function selectStarterQuestion(prompt) {
+  question.value = prompt
+  document.querySelector('#question-input')?.focus()
+}
+
+function handleQuestionKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  sendQuestion()
 }
 
 function goToStep(stepId) {
@@ -170,15 +227,27 @@ function restoreSnapshot(snapshot) {
   selectedTerm.value = terms.value.some((term) => term.term === savedTerm)
     ? savedTerm
     : selectedByKey ?? terms.value[0]?.term ?? ''
-  messages.value = snapshot.turns.flatMap((turn) => [
-    { role: 'user', content: turn.question },
-    {
-      role: 'assistant', content: turn.answer, sources: turn.sources,
-      recommendations: turn.recommendations, route: turn.route,
-      relatedToSelected: turn.related_to_selected, selectedTerm: turn.term_name,
-      validationStatus: turn.validation_status, validationRetries: turn.validation_retries,
-    },
-  ])
+  const groupedThreads = {}
+  const threadTerms = new Map()
+  for (const turn of snapshot.turns) {
+    const threadKey = turn.term_key || termStorageKey(turn.term_name)
+    groupedThreads[threadKey] ||= []
+    groupedThreads[threadKey].push(
+      { role: 'user', content: turn.question },
+      {
+        role: 'assistant', content: turn.answer, sources: turn.sources,
+        recommendations: turn.recommendations, route: turn.route,
+        relatedToSelected: turn.related_to_selected, selectedTerm: turn.term_name,
+        validationStatus: turn.validation_status, validationRetries: turn.validation_retries,
+      },
+    )
+    if (turn.term_name) threadTerms.set(threadKey, { term: turn.term_name })
+  }
+  chatThreads.value = groupedThreads
+  restoredThreadTerms.value = [...threadTerms.values()]
+  tutorTerm.value = savedTerm || selectedTerm.value
+  activeChatThreadKey.value = termStorageKey(tutorTerm.value)
+  messages.value = [...(groupedThreads[activeChatThreadKey.value] || [])]
   studyNote.value = ''
   saveMessage.value = ''
   readMessage.value = ''
@@ -193,6 +262,7 @@ async function activateSession(credentials) {
   persistSessionChoices()
   restoreSnapshot(snapshot)
   await refreshRecords()
+  studyNote.value = selectedTutorTerm.value?.note || ''
   await refreshReadingLists()
   currentStatus.value = '저장된 학습 세션을 불러왔습니다.'
 }
@@ -304,8 +374,7 @@ async function analyzeArticle() {
     })
     articleResult.value = analyzed
     selectedTerm.value = firstTerm
-    messages.value = []
-    studyNote.value = ''
+    switchTutorTerm(firstTerm, true)
     currentStatus.value = '기사 분석이 완료됐습니다.'
     await refreshRecords()
     await refreshReadingLists()
@@ -385,12 +454,12 @@ async function consumeSse(response, assistantMessage) {
   }
 }
 
-async function sendQuestion() {
-  const asked = question.value.trim()
+async function sendQuestion(questionOverride = '') {
+  const asked = String(questionOverride || question.value).trim()
   if (!asked || busy.value || !sessionReady.value || !sessionId.value) return
   errorMessage.value = ''
   saveMessage.value = ''
-  const selected = currentTerm.value
+  const selected = selectedTutorTerm.value
   messages.value.push({ role: 'user', content: asked })
   const assistantMessage = {
     role: 'assistant', content: '', sources: [], recommendations: [],
@@ -410,7 +479,7 @@ async function sendQuestion() {
       },
       body: JSON.stringify({
         question: asked,
-        term: selected ? `${selected.term}\n${selected.simple_definition}\n${selected.article_context}` : '',
+        term: selected ? `${selected.term}\n${selected.simple_definition || ''}\n${selected.article_context || ''}` : '',
       }),
       signal: activeController.signal,
     })
@@ -440,11 +509,6 @@ function cancelResponse() {
   activeController?.abort()
 }
 
-function useRecommendation(item) {
-  question.value = item.question
-  document.querySelector('#question-input')?.focus()
-}
-
 async function saveStudyRecord() {
   if (!canSave.value || busy.value) return
   errorMessage.value = ''
@@ -453,7 +517,14 @@ async function saveStudyRecord() {
     const result = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`, {
       method: 'POST',
       body: JSON.stringify({
-        term: currentTerm.value,
+        term: {
+          term: selectedTutorTerm.value.term,
+          category: selectedTutorTerm.value.category || 'Mechanism',
+          reason: selectedTutorTerm.value.reason || 'AI Tutor에서 질문하고 학습한 용어입니다.',
+          simple_definition: selectedTutorTerm.value.simple_definition || '',
+          article_context: selectedTutorTerm.value.article_context || '',
+          aliases: selectedTutorTerm.value.aliases || [],
+        },
         note: studyNote.value,
       }),
     })
@@ -653,14 +724,25 @@ initializeSession()
             <button class="icon-button" title="새 학습 세션" :disabled="busy || !sessionReady" @click="startNewSession">＋</button>
           </div>
           <p class="card-intro">{{ articleResult ? `「${articleResult.title}」와 선택한 용어를 질문의 참고 문맥으로 사용합니다.` : '기사 없이도 제약·바이오 개념을 자유롭게 질문할 수 있습니다.' }}</p>
+          <div class="tutor-controls">
+            <label class="field-label" for="tutor-term-select">학습할 용어</label>
+            <select id="tutor-term-select" class="text-input" :value="tutorTerm"
+              :disabled="busy || !sessionReady" @change="switchTutorTerm($event.target.value)">
+              <option value="">일반 질문</option>
+              <option v-for="term in tutorTerms" :key="termStorageKey(term.term)" :value="term.term">
+                {{ term.term }}{{ isKnownTerm(term) ? ' · 학습 기록 있음' : '' }}
+              </option>
+            </select>
+            <span class="thread-hint">{{ tutorTerm ? `${tutorTerm} 대화` : '일반 대화' }}는 다른 용어 대화와 분리되어 이어집니다.</span>
+          </div>
           <div ref="chatPanel" class="chat-panel" aria-live="polite">
             <div v-if="!messages.length" class="empty-chat">
               <div class="empty-icon">✳</div>
-              <strong>어떤 내용이 궁금한가요?</strong>
-              <p>기사의 주장과 확인된 근거를 구분해 설명합니다.</p>
+              <strong>{{ tutorTerm ? `${tutorTerm}부터 알아볼까요?` : '어떤 내용이 궁금한가요?' }}</strong>
+              <p>원리와 기사에서 확인된 사실을 나눠 설명합니다. 첫 질문은 아래 시작 질문에서 골라보세요.</p>
               <div class="starter-questions">
-                <button @click="question = '기사에서 실제로 확인된 결과와 아직 모르는 내용을 구분해줘.'">확인된 근거와 미확인 내용</button>
-                <button @click="question = '이 개념의 핵심 작동 원리를 쉬운 말로 설명해줘.'">핵심 원리 쉽게 보기</button>
+                <button v-for="item in starterQuestions" :key="item.label" type="button"
+                  @click="selectStarterQuestion(item.question)">{{ item.label }}</button>
               </div>
             </div>
             <template v-for="(message, index) in messages" :key="index">
@@ -686,7 +768,8 @@ initializeSession()
                   </div>
                   <div v-if="message.recommendations?.length" class="recommendations">
                     <div class="recommendation-heading"><span>다음 학습 방향</span><small>원하는 질문을 눌러 이어가세요</small></div>
-                    <button v-for="item in message.recommendations" :key="item.category" class="recommendation-card" @click="useRecommendation(item)">
+                    <button v-for="item in message.recommendations" :key="item.category" type="button"
+                      class="recommendation-card" :disabled="busy" @click="sendQuestion(item.question)">
                       <span class="recommendation-category">{{ item.category }}</span>
                       <span class="recommendation-goal">{{ item.learning_goal }}</span>
                       <strong>{{ item.question }} <i>↗</i></strong>
@@ -697,10 +780,12 @@ initializeSession()
             </template>
             <div v-if="busy" class="live-status"><span class="pulse-dot"></span>{{ currentStatus || '응답을 준비합니다.' }}</div>
           </div>
-          <form class="composer" @submit.prevent="sendQuestion">
-            <textarea id="question-input" v-model="question" rows="2" :disabled="busy || !sessionReady" placeholder="궁금한 점을 입력하세요…"></textarea>
+          <form class="composer" @submit.prevent="sendQuestion()">
+            <textarea id="question-input" v-model="question" rows="2" :disabled="busy || !sessionReady"
+              placeholder="질문을 입력하세요 · Enter 전송 / Shift+Enter 줄바꿈"
+              @keydown="handleQuestionKeydown"></textarea>
             <div class="composer-footer">
-              <span>{{ selectedTerm ? `선택 용어 · ${selectedTerm}` : '기사와 일반 개념을 모두 질문할 수 있어요' }}</span>
+              <span>{{ selectedTutorTerm ? `선택 용어 · ${selectedTutorTerm.term}` : '기사와 일반 개념을 모두 질문할 수 있어요' }}</span>
               <div>
                 <button v-if="busy" class="button button-quiet" type="button" @click="cancelResponse">중단</button>
                 <button class="send-button" type="submit" :disabled="busy || !sessionReady || !question.trim()" aria-label="질문 보내기">↑</button>
@@ -709,10 +794,10 @@ initializeSession()
           </form>
         </section>
 
-        <section v-if="articleResult && currentTerm" class="card save-card">
+        <section v-if="selectedTutorTerm" class="card save-card">
           <div class="section-heading compact-heading">
             <div><p class="eyebrow">YOUR MEMORY</p><h2>학습 기록 저장</h2></div>
-            <span class="save-term-label">{{ currentTerm.term }}</span>
+            <span class="save-term-label">{{ selectedTutorTerm.term }}</span>
           </div>
           <label class="field-label" for="study-note">내 메모 <span>선택</span></label>
           <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="3" placeholder="대화를 정리해 나만의 메모를 남기세요."></textarea>
@@ -720,7 +805,7 @@ initializeSession()
             학습 용어와 관련 대화 저장 <span aria-hidden="true">↓</span>
           </button>
           <p v-if="saveMessage" class="save-success">{{ saveMessage }}</p>
-          <p class="privacy-note">저장한 용어는 이 기사 원문에서 복습 용어 색상으로 표시됩니다.</p>
+          <p class="privacy-note">용어 정의, 선택한 메모, 이 용어와 연결된 대화를 현재 세션에 저장합니다. 기사가 있으면 원문에서 복습 용어로 표시됩니다.</p>
         </section>
       </div>
       <div class="step-navigation">

@@ -88,6 +88,19 @@ class ValidatorTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "pass")
 
+    def test_labeled_mechanism_background_can_pass_when_article_omits_mechanism(self):
+        answer = (
+            "일반 배경지식: ADC는 항체가 표적 항원에 붙은 뒤 세포 안으로 들어가고, "
+            "연결된 약물이 방출되어 세포에 작용하는 방식입니다."
+        )
+        result = validate_answer(
+            FakeJudge(AnswerValidation(status="insufficient_evidence")),
+            question="ADC의 작동 기전은 뭐야?",
+            answer=answer,
+            evidence="기사는 특정 ADC 후보의 연구 계획을 소개하지만 세부 작동 기전은 설명하지 않습니다.",
+        )
+        self.assertEqual(result["status"], "pass")
+
     def test_general_question_does_not_allow_numeric_claim_without_evidence(self):
         result = validate_answer(
             FakeJudge(AnswerValidation(status="pass")),
