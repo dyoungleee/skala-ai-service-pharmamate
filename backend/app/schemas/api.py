@@ -102,6 +102,7 @@ class SaveSessionStudyRecordRequest(BaseModel):
 class SessionStudyRecordSummary(BaseModel):
     term_key: str
     term_name: str
+    aliases: list[str] = Field(default_factory=list)
     category: str
     simple_definition: str
     note: str

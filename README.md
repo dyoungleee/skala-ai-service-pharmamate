@@ -70,6 +70,8 @@ npm run dev --prefix frontend
 ## 주요 기능
 
 - 기사 URL 또는 직접 입력한 본문 분석
+- 기사 읽기 → AI Tutor → 내 학습 기록 단계별 이동
+- 기사 전체 원문 우선 표시와 핵심 용어 새 용어/복습 용어 하이라이트
 - 기사 요약, 산업 이슈, 기업·기술 및 핵심 용어 확인
 - 원문을 읽으면서 핵심 용어 학습
 - 기사와 학습 기록을 바탕으로 한 AI 질문 및 답변
@@ -134,6 +136,7 @@ python eval/compare_answers.py --all --baseline-ref 9814fc2
 - [Vue 브라우저 화면 실험](docs/experiments/F6_3_vue_frontend.md)
 - [브라우저 E2E 검증](docs/experiments/F6_4_browser_e2e.md)
 - [세션 복원 및 접근 범위](docs/experiments/F7_1_sessions.md)
+- [단계별 학습 화면과 원문 용어 하이라이트](docs/experiments/F9_1_learning_flow_ui.md)
 - [전체 평가 결과](docs/experiments/F4_overall_evaluation.md)
 - [3.0 구현 결과 발표 자료](outputs/PharmaMate_3.0_Implementation_Results_F8.pptx)
 

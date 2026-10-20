@@ -29,15 +29,23 @@ def valid_remote_url(url: str) -> bool:
 ARTICLE_BODY_SELECTORS = [
     '#article-view-content-div', '[itemprop="articleBody"]',
     '#articleBody', '#article_body', '#article-body',
+    '.news-article-body', '.story-body', '.entry-content', '.post-content',
     '.article-view-content', '.article_view_content', '.article-body',
     '.article_body', '.news-view-content', '.article-content', '.article_view', 'article'
 ]
 ARTICLE_NOISE_SELECTORS = [
     'script', 'style', 'noscript', 'iframe', 'svg', 'form', 'button',
-    'input', 'textarea', 'select', 'nav', 'footer', 'aside',
+    'input', 'textarea', 'select', 'nav', 'header', 'footer', 'aside',
     '[id*="comment"]', '[class*="comment"]',
     '[id*="reply"]', '[class*="reply"]',
-    '.article-tools', '.article-toolbar', '.related-news', '.share', '.sns'
+    '.article-tools', '.article-toolbar', '.article-footer', '.article-info',
+    '.related-news', '.article-related', '.recommend', '.recommendation',
+    '.recommended', '.latest-news', '.popular-news', '.news-list', '.article-list',
+    '.tag-list', '.keyword-list', '.byline', '.reporter', '.share', '.sns',
+    '.sidebar', '.widget', '.advertisement', '.ad-container',
+    '[class*="related"]', '[id*="related"]', '[class*="recommend"]',
+    '[id*="recommend"]', '[class*="advert"]', '[id*="advert"]',
+    '[aria-label*="관련 기사"]'
 ]
 
 def _clean_article_node(node) -> str:

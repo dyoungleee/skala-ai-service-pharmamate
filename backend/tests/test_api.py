@@ -286,6 +286,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
             f"/api/sessions/{first['session_id']}/study-records", headers=headers
         ).json()
         self.assertEqual(records[0]["qa_count"], 1)
+        self.assertCountEqual(records[0]["aliases"], [term["term"], *term["aliases"]])
 
         first_memory = search_study_memory(
             "임상 1상 안전성", owner_id=first["session_id"], embedding_provider=FixedEmbeddings()

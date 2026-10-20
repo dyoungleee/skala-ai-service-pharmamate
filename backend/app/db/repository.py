@@ -332,7 +332,12 @@ def get_session_study_records(session_id: str) -> list[dict]:
               ON q.session_id=r.session_id AND q.term_key=r.term_key
             WHERE r.session_id=? GROUP BY r.session_id,r.term_key
             ORDER BY r.updated_at DESC""", (session_id,)).fetchall()
-    return [dict(row) for row in rows]
+    records = []
+    for row in rows:
+        record = dict(row)
+        record["aliases"] = json.loads(record.pop("aliases_json") or "[]")
+        records.append(record)
+    return records
 
 
 def _article_body_hash(article_text: str) -> str:
