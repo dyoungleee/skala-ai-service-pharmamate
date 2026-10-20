@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessageChunk
 
 from backend.app.main import app, runtime_dependency
+from backend.app.db import repository
 from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
 from backend.app.services.recommendations import fallback_recommendations
 
@@ -33,6 +35,7 @@ class FakeGraph:
         return {
             "answer": "가상 자료에는 결과가 아직 보고되지 않았습니다.",
             "route": "article",
+            "related_to_selected": True,
             "sources": [],
             "validation_status": "pass",
             "validation_retries": 0,
@@ -55,6 +58,7 @@ class FakeGraph:
             "data": {"output": {
                 "answer": "검증된 답변을 조각으로 전달합니다.",
                 "route": "article",
+                "related_to_selected": True,
                 "sources": [],
                 "validation_status": "pass",
                 "validation_retries": 0,
@@ -107,6 +111,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["validation_status"], "pass")
+        self.assertTrue(payload["related_to_selected"])
         self.assertEqual(len(payload["recommendations"]), 3)
         self.assertIn("임상시험은 뭐야?", self.runtime.agent_graph.payload["history"])
 
@@ -122,6 +127,33 @@ class ApiTests(unittest.TestCase):
         self.assertIn("event: sources", body)
         self.assertIn("event: recommendations", body)
         self.assertIn("event: done", body)
+        self.assertIn('"related_to_selected":true', body)
+
+    def test_study_record_save_only_links_questions_marked_relevant(self):
+        request = {
+            "term": {
+                "term": "항체-약물 접합체 (ADC)",
+                "category": "Modality",
+                "reason": "기사 이해에 필요합니다.",
+                "simple_definition": "항체가 약물을 표적 세포에 전달하도록 돕습니다.",
+                "article_context": "가상 기사에서 후보 기술로 언급됩니다.",
+                "aliases": ["ADC"],
+            },
+            "article_id": "fixture-article-01",
+            "article_url": "https://example.org/article",
+            "note": "검토된 합성 학습 메모",
+            "history": [
+                {"question": "항체는 무슨 역할이야?", "answer": "표적에 결합합니다.", "linked_to_selected": True},
+                {"question": "CAR-T는 뭐야?", "answer": "다른 질문입니다.", "linked_to_selected": False},
+            ],
+        }
+        with patch.object(repository, "save_learning_bundle", return_value=(False, "adc", 1, 1, "note")) as save:
+            response = self.client.post("/api/study-records", json=request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["new_questions"], 1)
+        saved_state = save.call_args.args[1]
+        self.assertEqual(saved_state["history"][0]["linked_term_key"], "adc")
+        self.assertEqual(saved_state["history"][1]["linked_term_key"], "")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ from backend.app.schemas.api import (
     ArticleAnalyzeResponse,
     ChatRequest,
     ChatResponse,
+    SaveStudyRecordRequest,
+    SaveStudyRecordResponse,
     StudyRecordSummary,
 )
 from backend.app.services.article_analysis import analyze_article
@@ -98,10 +100,48 @@ def chat_endpoint(
     return ChatResponse(
         answer=str(result.get("answer") or "답변을 생성하지 못했습니다."),
         route=str(result.get("route") or ""),
+        related_to_selected=bool(result.get("related_to_selected", False)),
         sources=result.get("sources") or [],
         validation_status=str(result.get("validation_status") or ""),
         validation_retries=int(result.get("validation_retries") or 0),
         recommendations=result.get("recommendations") or [],
+    )
+
+
+@app.post("/api/study-records", response_model=SaveStudyRecordResponse)
+def save_study_record_endpoint(
+    request: SaveStudyRecordRequest,
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> SaveStudyRecordResponse:
+    del runtime  # Runtime dependency configures the selected local SQLite database.
+    term_key = repository.normalize_term(request.term.term)
+    state = {
+        "article_id": request.article_id,
+        "url": request.article_url,
+        "history": [
+            {
+                "question": item.question,
+                "answer": item.answer,
+                "linked_term_key": term_key if item.linked_to_selected else "",
+                "article_id": request.article_id,
+            }
+            for item in request.history
+        ],
+    }
+    try:
+        _was_known, saved_key, new_count, matched_count, _note = repository.save_learning_bundle(
+            request.term.model_dump(), state, request.note
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"학습 기록을 저장하지 못했습니다 ({type(exc).__name__}).",
+        ) from exc
+    return SaveStudyRecordResponse(
+        term_key=saved_key,
+        new_questions=new_count,
+        matched_questions=matched_count,
+        message=f"학습 기록 저장 완료: 신규 Q&A {new_count}건",
     )
 
 
@@ -157,6 +197,7 @@ async def chat_stream_endpoint(
             yield sse_event("recommendations", {"items": final_state.get("recommendations") or []})
             yield sse_event("done", {
                 "route": final_state.get("route", ""),
+                "related_to_selected": bool(final_state.get("related_to_selected", False)),
                 "validation_status": final_state.get("validation_status", ""),
                 "validation_retries": int(final_state.get("validation_retries", 0)),
             })

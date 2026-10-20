@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from backend.app.schemas.article import ArticleAnalysis
+from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
 from backend.app.services.recommendations import LearningQuestion
 
 
@@ -25,6 +25,7 @@ class ArticleAnalyzeResponse(BaseModel):
 class ChatHistoryItem(BaseModel):
     question: str = Field(max_length=1000)
     answer: str = Field(max_length=6000)
+    linked_to_selected: bool = False
 
 
 class ChatRequest(BaseModel):
@@ -37,10 +38,26 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     route: str = ""
+    related_to_selected: bool = False
     sources: list[dict[str, str]] = Field(default_factory=list)
     validation_status: str = ""
     validation_retries: int = 0
     recommendations: list[LearningQuestion] = Field(default_factory=list)
+
+
+class SaveStudyRecordRequest(BaseModel):
+    term: PharmaTerm
+    article_id: str = Field(min_length=1, max_length=100)
+    article_url: str = Field(default="", max_length=2048)
+    note: str = Field(default="", max_length=8000)
+    history: list[ChatHistoryItem] = Field(default_factory=list, max_length=20)
+
+
+class SaveStudyRecordResponse(BaseModel):
+    term_key: str
+    new_questions: int
+    matched_questions: int
+    message: str
 
 
 class StudyRecordSummary(BaseModel):
