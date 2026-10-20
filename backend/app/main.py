@@ -216,7 +216,7 @@ def save_study_record_endpoint(
         term_key=saved_key,
         new_questions=new_count,
         matched_questions=matched_count,
-        message=f"학습 기록 저장 완료: 신규 Q&A {new_count}건",
+        message=f"학습 메모 자동 저장 완료: 신규 관련 Q&A {new_count}건",
     )
 
 
@@ -367,7 +367,7 @@ def save_session_study_record_endpoint(
         term_key=saved_key,
         new_questions=new_count,
         matched_questions=matched_count,
-        message=f"학습 기록 저장 완료: 신규 Q&A {new_count}건",
+        message=f"학습 메모 자동 저장 완료: 신규 관련 Q&A {new_count}건",
     )
 
 

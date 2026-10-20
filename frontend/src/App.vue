@@ -14,6 +14,7 @@ const restoredThreadTerms = ref([])
 const activeChatThreadKey = ref('')
 const studyNote = ref('')
 const studyRecords = ref([])
+const selectedRecordKey = ref('')
 const readArticles = ref([])
 const industryIssues = ref([])
 const selectedIssueId = ref('')
@@ -57,6 +58,33 @@ const tutorTerms = computed(() => {
 const selectedTutorTerm = computed(() => tutorTerms.value.find(
   (item) => termStorageKey(item.term) === termStorageKey(tutorTerm.value),
 ) ?? null)
+const sortedStudyRecords = computed(() => [...studyRecords.value].sort((left, right) => {
+  const leftTime = Date.parse(left.updated_at || '') || 0
+  const rightTime = Date.parse(right.updated_at || '') || 0
+  return rightTime - leftTime
+}))
+const studyRecordGroups = computed(() => {
+  const groups = new Map()
+  for (const record of sortedStudyRecords.value) {
+    const category = String(record.category || 'Other')
+    if (!groups.has(category)) groups.set(category, [])
+    groups.get(category).push(record)
+  }
+  return [...groups.entries()]
+    .map(([category, records]) => ({ category, records }))
+    .sort((left, right) => (Date.parse(right.records[0]?.updated_at || '') || 0)
+      - (Date.parse(left.records[0]?.updated_at || '') || 0))
+})
+const selectedStudyRecord = computed(() => studyRecords.value.find(
+  (record) => record.term_key === selectedRecordKey.value,
+) ?? null)
+const recordCategoryLabels = {
+  Modality: '치료 방식', Drug: '의약품 후보', Target: '표적', Biomarker: '바이오마커',
+  Disease: '질환', 'Clinical Trial': '임상시험', 'Clinical Metric': '임상 지표',
+  Regulatory: '규제·허가', Business: '사업·제휴', Manufacturing: '생산',
+  Platform: '플랫폼', Diagnostic: '진단', Mechanism: '작용 기전', Technology: '기술',
+  Other: '기타',
+}
 const canSave = computed(() => Boolean(selectedTutorTerm.value && messages.value.some((item) => item.role === 'assistant' && item.content)))
 const starterQuestions = [
   { label: '쉽게 비유해줘', question: '이 용어를 일상적인 예로 쉽게 비유해줘.' },
@@ -202,6 +230,29 @@ function handleQuestionKeydown(event) {
   sendQuestion()
 }
 
+function recordCategoryLabel(category) {
+  return recordCategoryLabels[category] || category || '기타'
+}
+
+function formatRecordDate(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function displayStudyNote(record) {
+  return String(record?.note || record?.simple_definition || '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*]\s+/gm, '• ')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .trim()
+}
+
+function selectStudyRecord(record) {
+  selectedRecordKey.value = record.term_key
+}
+
 function goToStep(stepId) {
   if (!steps.some((step) => step.id === stepId)) return
   activeStep.value = stepId
@@ -222,6 +273,7 @@ function isStepComplete(stepId) {
 
 function restoreSnapshot(snapshot) {
   articleResult.value = snapshot.article
+  selectedRecordKey.value = ''
   const savedTerm = snapshot.turns.at(-1)?.term_name
   const selectedByKey = terms.value.find((term) => termStorageKey(term.term) === snapshot.selected_term_key)?.term
   selectedTerm.value = terms.value.some((term) => term.term === savedTerm)
@@ -559,8 +611,12 @@ async function refreshRecords() {
   if (!sessionId.value) return
   try {
     studyRecords.value = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`)
+    if (!studyRecords.value.some((record) => record.term_key === selectedRecordKey.value)) {
+      selectedRecordKey.value = sortedStudyRecords.value[0]?.term_key || ''
+    }
   } catch {
     studyRecords.value = []
+    selectedRecordKey.value = ''
   }
 }
 
@@ -799,13 +855,13 @@ initializeSession()
             <div><p class="eyebrow">YOUR MEMORY</p><h2>학습 기록 저장</h2></div>
             <span class="save-term-label">{{ selectedTutorTerm.term }}</span>
           </div>
-          <label class="field-label" for="study-note">내 메모 <span>선택</span></label>
-          <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="3" placeholder="대화를 정리해 나만의 메모를 남기세요."></textarea>
+          <label class="field-label" for="study-note">추가 메모 <span>선택</span></label>
+          <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="3" placeholder="대화 기반 학습 정리는 자동으로 저장됩니다. 덧붙일 내용이 있으면 적어 주세요."></textarea>
           <button class="button button-secondary button-wide" :disabled="!canSave || busy" @click="saveStudyRecord">
             학습 용어와 관련 대화 저장 <span aria-hidden="true">↓</span>
           </button>
           <p v-if="saveMessage" class="save-success">{{ saveMessage }}</p>
-          <p class="privacy-note">용어 정의, 선택한 메모, 이 용어와 연결된 대화를 현재 세션에 저장합니다. 기사가 있으면 원문에서 복습 용어로 표시됩니다.</p>
+          <p class="privacy-note">용어 정리와 이 용어에 연결된 AI Tutor 대화를 자동 저장합니다. 추가 메모를 입력하면 함께 보관합니다.</p>
         </section>
       </div>
       <div class="step-navigation">
@@ -822,15 +878,40 @@ initializeSession()
             <div><p class="eyebrow">03 · STUDY MEMORY</p><h2 id="records-step-title">내 학습 기록</h2></div>
             <button class="text-button" @click="refreshRecords">새로고침</button>
           </div>
-          <div v-if="studyRecords.length" class="record-list">
-            <div v-for="record in studyRecords" :key="record.term_key" class="record-item">
-              <span class="record-dot"></span>
-              <div><strong>{{ record.term_name }}</strong><p>{{ record.note || record.simple_definition }}</p></div>
-              <span class="review-count">Q&A {{ record.qa_count }}</span>
-            </div>
+          <div v-if="studyRecords.length" class="record-groups">
+            <section v-for="group in studyRecordGroups" :key="group.category" class="record-group">
+              <div class="record-group-heading">
+                <strong>{{ recordCategoryLabel(group.category) }}</strong>
+                <span>{{ group.records.length }}개 용어 · 최신순</span>
+              </div>
+              <div class="record-list">
+                <button v-for="record in group.records" :key="record.term_key" type="button"
+                  class="record-item" :class="{ 'record-item-active': selectedRecordKey === record.term_key }"
+                  :aria-pressed="selectedRecordKey === record.term_key" @click="selectStudyRecord(record)">
+                  <span class="record-dot"></span>
+                  <span class="record-item-copy">
+                    <strong>{{ record.term_name }}</strong>
+                    <span class="record-summary">{{ record.simple_definition || '저장된 학습 용어' }}</span>
+                    <span class="record-meta">{{ formatRecordDate(record.updated_at) }} · Q&A {{ record.qa_count }}</span>
+                  </span>
+                  <span class="record-chevron" aria-hidden="true">›</span>
+                </button>
+              </div>
+            </section>
           </div>
-          <p v-else class="records-empty">아직 저장된 용어가 없습니다. AI Tutor에서 대화한 뒤 용어를 저장해 보세요.</p>
-          <p class="privacy-note">기록은 현재 학습 세션의 로컬 SQLite에 저장됩니다.</p>
+          <p v-else class="records-empty">아직 저장된 용어가 없습니다. AI Tutor에서 용어를 선택하고 질문한 뒤 <strong>학습 용어와 관련 대화 저장</strong>을 눌러 보세요. 대화 요약과 질문이 없어도 기본 용어 정리가 기록됩니다.</p>
+          <section v-if="selectedStudyRecord" class="record-note-detail" aria-live="polite">
+            <div class="record-note-heading">
+              <div>
+                <span class="mini-label">저장된 학습 메모</span>
+                <h3>{{ selectedStudyRecord.term_name }}</h3>
+              </div>
+              <span class="record-date">{{ formatRecordDate(selectedStudyRecord.updated_at) }}</span>
+            </div>
+            <div class="record-note-body">{{ displayStudyNote(selectedStudyRecord) }}</div>
+            <p class="privacy-note">{{ recordCategoryLabel(selectedStudyRecord.category) }} · 관련 대화 {{ selectedStudyRecord.qa_count }}건</p>
+          </section>
+          <p class="privacy-note">기록은 현재 학습 세션의 로컬 SQLite에 저장되며, 같은 분야 안에서 최근 저장한 용어부터 표시됩니다.</p>
         </section>
 
         <section class="card issues-card">

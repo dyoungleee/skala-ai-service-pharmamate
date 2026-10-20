@@ -294,6 +294,24 @@ def get_session_turns(
     return turns
 
 
+def _draft_session_study_note(term: dict, conversations: list[dict]) -> str:
+    """Create a stable learning note from a term card and its linked tutor turns."""
+    lines = [
+        f"## {term.get('term') or term.get('term_name') or '학습 용어'}",
+        f"- 분류: {term.get('category') or '기타'}",
+        f"- 기본 개념: {term.get('simple_definition') or '정의가 저장되지 않았습니다.'}",
+        f"- 기사에서의 의미: {term.get('article_context') or '연결된 기사 맥락이 없습니다.'}",
+    ]
+    if conversations:
+        lines.extend(["", "### AI Tutor 대화에서 정리한 내용"])
+        for item in conversations[-8:]:
+            question = str(item.get("question") or "").strip()
+            answer = str(item.get("answer") or "").strip()
+            if question and answer:
+                lines.extend([f"**Q.** {question}", f"**A.** {answer[:1600]}", ""])
+    return "\n".join(lines).strip()
+
+
 def save_session_study_record(session_id: str, term: dict, note: str = "") -> tuple[str, int, int]:
     term_key = normalize_term(term.get("term", ""))
     if not term_key:
@@ -319,9 +337,15 @@ def save_session_study_record(session_id: str, term: dict, note: str = "") -> tu
             (session_id, term_key, term.get("term", ""), json.dumps(aliases, ensure_ascii=False),
              term.get("category", ""), term.get("simple_definition", ""),
              term.get("article_context", ""), article_id, article_url, note, timestamp, timestamp))
-        relevant = conn.execute("""SELECT question,answer,article_id FROM session_turns
+        relevant = [dict(row) for row in conn.execute("""SELECT question,answer,article_id FROM session_turns
             WHERE session_id=? AND term_key=? AND related_to_selected=1
-            ORDER BY created_at""", (session_id, term_key)).fetchall()
+            ORDER BY created_at""", (session_id, term_key)).fetchall()]
+        generated_note = _draft_session_study_note(term, relevant)
+        extra_note = str(note or "").strip()
+        if extra_note:
+            generated_note += f"\n\n### 추가 메모\n{extra_note}"
+        conn.execute("""UPDATE session_learning_records SET note=?
+            WHERE session_id=? AND term_key=?""", (generated_note, session_id, term_key))
         inserted = 0
         for item in relevant:
             qid = hashlib.sha256(
@@ -342,12 +366,24 @@ def get_session_study_records(session_id: str) -> list[dict]:
             FROM session_learning_records r LEFT JOIN session_study_qa q
               ON q.session_id=r.session_id AND q.term_key=r.term_key
             WHERE r.session_id=? GROUP BY r.session_id,r.term_key
-            ORDER BY r.updated_at DESC""", (session_id,)).fetchall()
-    records = []
-    for row in rows:
-        record = dict(row)
-        record["aliases"] = json.loads(record.pop("aliases_json") or "[]")
-        records.append(record)
+            ORDER BY r.updated_at DESC, r.term_name COLLATE NOCASE""", (session_id,)).fetchall()
+        qa_rows = conn.execute("""SELECT term_key,question,answer FROM session_study_qa
+            WHERE session_id=? ORDER BY created_at""", (session_id,)).fetchall()
+        qa_by_term: dict[str, list[dict]] = {}
+        for qa in qa_rows:
+            qa_by_term.setdefault(qa["term_key"], []).append(dict(qa))
+
+        records = []
+        for row in rows:
+            record = dict(row)
+            record["aliases"] = json.loads(record.pop("aliases_json") or "[]")
+            if not str(record.get("note") or "").strip():
+                record["note"] = _draft_session_study_note(record, qa_by_term.get(record["term_key"], []))
+                # Backfill older blank records without changing their original sort time.
+                conn.execute("""UPDATE session_learning_records SET note=?
+                    WHERE session_id=? AND term_key=? AND TRIM(note)=''""",
+                    (record["note"], session_id, record["term_key"]))
+            records.append(record)
     return records
 
 

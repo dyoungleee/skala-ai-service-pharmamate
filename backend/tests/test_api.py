@@ -312,6 +312,9 @@ print(json.dumps(response.json(), ensure_ascii=False))
         ).json()
         self.assertEqual(records[0]["qa_count"], 1)
         self.assertCountEqual(records[0]["aliases"], [term["term"], *term["aliases"]])
+        self.assertIn("### AI Tutor 대화에서 정리한 내용", records[0]["note"])
+        self.assertIn("### 추가 메모", records[0]["note"])
+        self.assertIn("안전성과 내약성을 우선 살핍니다.", records[0]["note"])
 
         first_memory = search_study_memory(
             "임상 1상 안전성", owner_id=first["session_id"], embedding_provider=FixedEmbeddings()
@@ -329,6 +332,77 @@ print(json.dumps(response.json(), ensure_ascii=False))
         )
         self.assertTrue(first_fallback)
         self.assertEqual(second_fallback, [])
+
+    def test_session_study_record_auto_drafts_note_from_linked_tutor_chat(self):
+        session = self.client.post("/api/sessions").json()
+        session_id = session["session_id"]
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        article = self.client.post("/api/articles/analyze", json={
+            "pasted_text": "가상 기사에서 임상 1상 계획을 설명합니다. " * 10,
+        }).json()
+        self.client.put(f"/api/sessions/{session_id}/article", headers=headers,
+                        json={"article": article, "selected_term_key": "임상 1상"})
+        question = "임상 1상에서 무엇을 확인해?"
+        with self.client.stream(
+            "POST", f"/api/sessions/{session_id}/chat/stream", headers=headers,
+            json={"question": question, "term": "임상 1상"},
+        ) as response:
+            list(response.iter_text())
+        term = article["analysis"]["key_terms"][0]
+
+        saved = self.client.post(
+            f"/api/sessions/{session_id}/study-records", headers=headers,
+            json={"term": term},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertIn("메모 자동 저장", saved.json()["message"])
+        records = self.client.get(
+            f"/api/sessions/{session_id}/study-records", headers=headers
+        ).json()
+        note = records[0]["note"]
+        self.assertIn("## 임상 1상", note)
+        self.assertIn("- 분류: Clinical Trial", note)
+        self.assertIn("### AI Tutor 대화에서 정리한 내용", note)
+        self.assertIn(f"**Q.** {question}", note)
+        self.assertIn("**A.** 검증된 답변을 조각으로 전달합니다.", note)
+
+        # Older blank notes are backfilled from their saved Q&A when opened.
+        with repository.connect_db() as conn:
+            conn.execute("UPDATE session_learning_records SET note='' WHERE session_id=?", (session_id,))
+        refreshed = self.client.get(
+            f"/api/sessions/{session_id}/study-records", headers=headers
+        ).json()
+        self.assertIn(question, refreshed[0]["note"])
+        with repository.connect_db() as conn:
+            stored_note = conn.execute(
+                "SELECT note FROM session_learning_records WHERE session_id=?", (session_id,)
+            ).fetchone()["note"]
+        self.assertTrue(stored_note)
+
+    def test_session_study_record_without_questions_uses_term_summary_format(self):
+        session = self.client.post("/api/sessions").json()
+        session_id = session["session_id"]
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        term = {
+            "term": "임상 1상", "category": "Clinical Trial",
+            "reason": "개발 단계 이해", "simple_definition": "사람 대상 초기 평가 단계입니다.",
+            "article_context": "후보물질의 안전성을 살핍니다.", "aliases": ["Phase 1"],
+        }
+
+        saved = self.client.post(
+            f"/api/sessions/{session_id}/study-records", headers=headers,
+            json={"term": term},
+        )
+        self.assertEqual(saved.status_code, 200)
+        record = self.client.get(
+            f"/api/sessions/{session_id}/study-records", headers=headers
+        ).json()[0]
+        self.assertIn("## 임상 1상", record["note"])
+        self.assertIn("- 분류: Clinical Trial", record["note"])
+        self.assertIn("사람 대상 초기 평가 단계입니다.", record["note"])
+        self.assertIn("후보물질의 안전성을 살핍니다.", record["note"])
+        self.assertNotIn("### AI Tutor 대화에서 정리한 내용", record["note"])
+        self.assertEqual(record["qa_count"], 0)
 
     def test_read_articles_dedupe_copies_and_group_issues_conservatively(self):
         session = self.client.post("/api/sessions").json()
