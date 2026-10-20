@@ -269,6 +269,108 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(first_fallback)
         self.assertEqual(second_fallback, [])
 
+    def test_read_articles_dedupe_copies_and_group_issues_conservatively(self):
+        session = self.client.post("/api/sessions").json()
+        session_id = session["session_id"]
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        endpoint = f"/api/sessions/{session_id}/articles/mark-read"
+
+        def article(article_id, title, url, body, key_issue, entities):
+            return {
+                "article_id": article_id,
+                "article": body,
+                "url": url,
+                "title": title,
+                "load_method": "manual",
+                "analysis": {
+                    "article_type": "임상",
+                    "one_line_summary": "합성 실험 기사입니다.",
+                    "key_issue": key_issue,
+                    "key_entities": entities,
+                    "key_terms": [],
+                    "confusing_points": [],
+                },
+            }
+
+        first = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a1", "HB-101 임상 2상 주요 결과", "https://news.example.org/story/1?utm_source=feed",
+            "synthetic clinical article one", "HB-101 임상 2상 결과 발표", ["한빛바이오", "HB-101"],
+        )}).json()
+        self.assertTrue(first["saved"])
+        self.assertEqual(first["match_type"], "new")
+
+        same_url = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a2", "새 제목", "https://www.news.example.org/story/1?utm_source=mail",
+            "different body", "HB-101 임상 2상 결과 발표", ["한빛바이오", "HB-101"],
+        )}).json()
+        self.assertTrue(same_url["duplicate"])
+        self.assertEqual(same_url["duplicate_by"], "url")
+
+        same_body = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a3", "다른 매체 제목", "https://mirror.example.org/copy",
+            "  SYNTHETIC   CLINICAL article one  ", "HB-101 임상 2상 결과 발표", ["한빛바이오", "HB-101"],
+        )}).json()
+        self.assertTrue(same_body["duplicate"])
+        self.assertEqual(same_body["duplicate_by"], "content")
+
+        same_issue = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a4", "HB-101 2상 임상 결과", "https://news.example.org/story/2",
+            "synthetic follow-up article", "HB-101 2상 임상 결과 공개", ["한빛바이오", "HB-101"],
+        )}).json()
+        self.assertTrue(same_issue["saved"])
+        self.assertEqual(same_issue["match_type"], "automatic")
+        self.assertEqual(same_issue["issue_id"], first["issue_id"])
+
+        other_phase = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a5", "HB-101 임상 3상", "https://news.example.org/story/3",
+            "synthetic phase three article", "HB-101 임상 3상 결과 발표", ["한빛바이오", "HB-101"],
+        )}).json()
+        self.assertEqual(other_phase["match_type"], "new")
+        self.assertNotEqual(other_phase["issue_id"], first["issue_id"])
+
+        manually_linked = self.client.post(endpoint, headers=headers, json={"article": article(
+            "a6", "별도 기사", "https://news.example.org/story/4",
+            "synthetic manually grouped article", "새로운 회사 발표", ["한빛바이오", "HB-101"],
+        ), "issue_id": first["issue_id"]}).json()
+        self.assertEqual(manually_linked["match_type"], "manual")
+        self.assertEqual(manually_linked["issue_id"], first["issue_id"])
+
+        issue_list = self.client.get(
+            f"/api/sessions/{session_id}/industry-issues", headers=headers
+        ).json()
+        grouped = next(item for item in issue_list if item["issue_id"] == first["issue_id"])
+        self.assertEqual(grouped["article_count"], 3)
+        self.assertEqual(len(grouped["articles"]), 3)
+        article_list = self.client.get(f"/api/sessions/{session_id}/articles", headers=headers).json()
+        self.assertEqual(len(article_list), 4)
+        other_session = self.client.post("/api/sessions").json()
+        other_issues = self.client.get(
+            f"/api/sessions/{other_session['session_id']}/industry-issues",
+            headers={"Authorization": f"Bearer {other_session['access_token']}"},
+        ).json()
+        self.assertEqual(other_issues, [])
+        session_articles = [
+            item for item in repository.get_memory_documents(session_id)
+            if item["source_type"] == "session_article"
+        ]
+        self.assertEqual(len(session_articles), 4)
+        self.assertEqual(repository.get_memory_documents(other_session["session_id"]), [])
+
+    def test_additive_session_migration_keeps_legacy_article_records(self):
+        state = {
+            "article_id": "legacy-article-01",
+            "title": "기존 노트북에서 저장한 기사",
+            "url": "https://legacy.example.org/article",
+            "analysis": {
+                "article_type": "산업", "one_line_summary": "기존 기록입니다.",
+                "key_issue": "기존 이슈", "key_entities": [], "key_terms": [],
+            },
+        }
+        self.assertTrue(repository.save_read_article(state))
+        repository.configure_database(self.temp_dir.name)
+        rows = repository.get_recent_articles()
+        self.assertEqual([row["article_id"] for row in rows], ["legacy-article-01"])
+
 
 if __name__ == "__main__":
     unittest.main()

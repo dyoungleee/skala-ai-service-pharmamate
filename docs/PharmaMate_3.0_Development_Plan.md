@@ -227,6 +227,8 @@ pharmamate/
 | POST | `/api/study-records` | 검토된 학습 메모 저장 |
 | POST | `/api/articles/mark-read` | 기사 읽기 완료 및 중복 검사 |
 | GET | `/api/industry-issues` | 중복 정리된 산업 이슈 목록 |
+| POST | `/api/sessions/{session_id}/articles/mark-read` | 세션별 기사 중복 판정 및 이슈 연결 |
+| GET | `/api/sessions/{session_id}/industry-issues` | 세션별 산업 이슈와 기사 묶음 |
 
 API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검증이 필요하다.
 
@@ -254,13 +256,13 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 
 **시간이 부족할 때:** F0~F3의 실제 작동과 F4의 재현 가능한 증거를 우선한다. 새 모델로의 교체, 새 프런트엔드, 다수의 선택 기술을 한꺼번에 도입하지 않는다. Day3 17시 30분 발표 전에는 시연 흐름과 PPT를 확인한다.
 
-**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`. F7.1 세션 복원·접근 제어는 현재 구현 중이다. 각 단계의 조건과 한계는 `docs/experiments/`에 기록한다. F4 종합 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)와 결과 요약 PPT로 남긴다.
+**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`, F7.1 `d620925`. F7.2 기사·산업 이슈 관리는 현재 구현 중이다. 각 단계의 조건과 한계는 `docs/experiments/`에 기록한다. F4 종합 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)와 결과 요약 PPT로 남긴다.
 
 ### 10.2 3.0 후속 범위
 
 1. **F5 — 동적 후속 질문 (완료):** 답변과 질문을 한 번의 구조화 출력으로 생성한다. 원리 심화·개념 연결·한계/응용 질문 3개와 학습 목표를 표시한다. 합성 입력 4건에서 별도 생성 방식과 지연·토큰·비용을 비교하고, 결과는 [F5 실험 보고서](experiments/F5_dynamic_followup_questions.md)에 기록했다.
 2. **F6 — API와 화면 (F6.1~F6.3 구현):** FastAPI 기사/질문·학습 기록 API, 검증 답변 SSE, Vue 화면을 연결했다. 기사 분석 → 질문 → 출처·후속 질문 확인 → 검토한 학습 기록 저장 흐름을 제공한다. 백엔드 28개 단위 테스트와 Vue production build를 통과했다. 실 API와 사용자 DB를 이용한 종단 간 확인은 별도로 남아 있다. API 조건은 [F6.1 보고서](experiments/F6_1_fastapi_api.md), SSE 동작은 [F6.2 보고서](experiments/F6_2_sse_streaming.md), Vue 연결은 [F6.3 보고서](experiments/F6_3_vue_frontend.md)에 기록한다.
-3. **F7 — 세션과 이슈:** F7.1 익명 세션 토큰, 대화·기사 복원, 세션 소유 학습 기록과 RAG 범위를 구현했다. 테스트는 [F7.1 보고서](experiments/F7_1_sessions.md)에 있다. 다음 F7.2에서 세션 안의 기사 중복 판정과 산업 이슈 연결을 추가한다. 변경은 기존 테이블을 건드리지 않는 새 테이블로 추가한다.
+3. **F7 — 세션과 이슈:** F7.1 익명 세션 토큰, 대화·기사 복원, 세션 소유 학습 기록과 RAG 범위를 구현했다. F7.2에서 세션 안의 기사 URL·본문·제목 중복 판정, 산업 이슈 자동·수동 연결 및 UI 목록을 추가했다. 기존 SQLite 테이블은 보존하고 새 테이블만 추가한다. 합성 기준 비교와 한계는 [F7.1 보고서](experiments/F7_1_sessions.md), [F7.2 보고서](experiments/F7_2_article_issue_management.md)에 있다.
 4. **F8 — 선택 기술:** Query Routing 개선, Dynamic Planning, MCP, 병렬 실행은 섹션 5의 대조 실험과 ADR을 거쳐 채택한다.
 
 ### 10.3 기능별 완료·커밋·푸시 절차
@@ -292,7 +294,7 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 - [ ] SSE 응답과 연결 끊김·오류 처리 시나리오가 작동한다.
 - [x] 재접속 후 허가된 세션의 대화를 복원할 수 있다. API 토큰·복원 테스트와 Vue production build를 통과했다.
 - [x] 답변 직후 학습 목적이 다른 후속 질문 3개가 갱신된다.
-- [ ] 동일 기사 재등록을 막고, 서로 다른 기사가 같은 산업 이슈를 다루면 연결한다.
+- [x] 동일 기사 재등록을 막고, 서로 다른 기사가 같은 산업 이슈를 다루면 연결한다. 합성 5쌍 기준 중복 Recall 0.5→1.0, 이슈 연결 precision/recall 1.0/1.0; 표본 한계는 F7.2 보고서에 기록했다.
 - [ ] Ollama 사용 가능성과 선택 기술의 채택·보류 이유를 실측 및 ADR로 설명한다.
 
 ## 12. 위험 및 트레이드오프

@@ -109,6 +109,48 @@ class SessionStudyRecordSummary(BaseModel):
     updated_at: str
 
 
+class MarkSessionArticleReadRequest(BaseModel):
+    article: ArticleAnalyzeResponse
+    issue_id: str = Field(default="", max_length=100)
+
+
+class MarkSessionArticleReadResponse(BaseModel):
+    article_id: str
+    saved: bool
+    duplicate: bool
+    duplicate_by: str = ""
+    issue_id: str | None = None
+    issue_title: str = ""
+    match_type: str = ""
+    message: str
+
+
+class SessionArticleSummary(BaseModel):
+    article_id: str
+    title: str
+    source_url: str = ""
+    issue_id: str | None = None
+    issue_title: str = ""
+    read_at: str
+
+
+class IndustryIssueArticleSummary(BaseModel):
+    article_id: str
+    title: str
+    source_url: str = ""
+    read_at: str
+
+
+class IndustryIssueSummary(BaseModel):
+    issue_id: str
+    title: str
+    entities: list[str] = Field(default_factory=list)
+    article_count: int
+    created_at: str
+    updated_at: str
+    articles: list[IndustryIssueArticleSummary] = Field(default_factory=list)
+
+
 class StudyRecordSummary(BaseModel):
     term_key: str
     term_name: str

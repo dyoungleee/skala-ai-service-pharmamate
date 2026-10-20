@@ -16,10 +16,14 @@ from backend.app.schemas.api import (
     ChatRequest,
     ChatResponse,
     CreateSessionResponse,
+    IndustryIssueSummary,
+    MarkSessionArticleReadRequest,
+    MarkSessionArticleReadResponse,
     SaveSessionStudyRecordRequest,
     SaveStudyRecordRequest,
     SaveStudyRecordResponse,
     SessionArticleUpdateRequest,
+    SessionArticleSummary,
     SessionSnapshot,
     SessionStudyRecordSummary,
     StudyRecordSummary,
@@ -362,6 +366,57 @@ def save_session_study_record_endpoint(
         matched_questions=matched_count,
         message=f"학습 기록 저장 완료: 신규 Q&A {new_count}건",
     )
+
+
+@app.post(
+    "/api/sessions/{session_id}/articles/mark-read",
+    response_model=MarkSessionArticleReadResponse,
+)
+def mark_session_article_read_endpoint(
+    session_id: str,
+    request: MarkSessionArticleReadRequest,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> MarkSessionArticleReadResponse:
+    del runtime
+    require_session_access(session_id, authorization)
+    try:
+        result = repository.mark_session_article_read(
+            session_id, request.article.model_dump(), request.issue_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.") from exc
+    return MarkSessionArticleReadResponse(**result)
+
+
+@app.get(
+    "/api/sessions/{session_id}/articles",
+    response_model=list[SessionArticleSummary],
+)
+def session_articles_endpoint(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> list[SessionArticleSummary]:
+    del runtime
+    require_session_access(session_id, authorization)
+    return [SessionArticleSummary(**row) for row in repository.get_session_articles(session_id)]
+
+
+@app.get(
+    "/api/sessions/{session_id}/industry-issues",
+    response_model=list[IndustryIssueSummary],
+)
+def session_industry_issues_endpoint(
+    session_id: str,
+    authorization: str | None = Header(default=None),
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> list[IndustryIssueSummary]:
+    del runtime
+    require_session_access(session_id, authorization)
+    return [IndustryIssueSummary(**row) for row in repository.get_session_industry_issues(session_id)]
 
 
 @app.get("/api/study-records", response_model=list[StudyRecordSummary])

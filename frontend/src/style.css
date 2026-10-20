@@ -87,6 +87,17 @@ a { color: inherit; }
 .issue-block { margin-top: 16px; padding: 13px 14px; border-left: 3px solid #6cae94; border-radius: 0 8px 8px 0; background: #f3f8f5; }
 .mini-label { display: block; color: #819099; font-size: 10px; font-weight: 700; letter-spacing: .35px; }
 .issue-block p { margin: 5px 0 0; color: #40555f; font-size: 12px; line-height: 1.65; }
+.read-actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f1; }
+.read-actions .field-label { margin-top: 0; }
+.issue-list { display: grid; gap: 10px; }
+.saved-issue { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid #eff1f2; }
+.saved-issue:last-child { border-bottom: 0; }
+.saved-issue-heading { display: flex; justify-content: space-between; gap: 9px; align-items: flex-start; }
+.saved-issue-heading strong { color: #405762; font-size: 10px; line-height: 1.55; }
+.saved-issue-heading span, .saved-issue-label { flex: 0 0 auto; color: #90a09e; font-size: 9px; }
+.saved-issue a { color: #527987; font-size: 10px; line-height: 1.5; text-decoration: none; }
+.saved-issue a:hover { color: var(--green); text-decoration: underline; }
+.recent-articles { margin-top: 13px; padding-top: 11px; border-top: 1px solid #edf0f1; }
 .term-section { margin-top: 18px; }
 .term-section-heading { display: flex; justify-content: space-between; align-items: center; color: #9ba5aa; font-size: 10px; }
 .term-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }

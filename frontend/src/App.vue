@@ -10,6 +10,10 @@ const question = ref('')
 const messages = ref([])
 const studyNote = ref('')
 const studyRecords = ref([])
+const readArticles = ref([])
+const industryIssues = ref([])
+const selectedIssueId = ref('')
+const readMessage = ref('')
 const sessionChoices = ref([])
 const sessionId = ref('')
 const sessionToken = ref('')
@@ -85,6 +89,8 @@ function restoreSnapshot(snapshot) {
   ])
   studyNote.value = ''
   saveMessage.value = ''
+  readMessage.value = ''
+  selectedIssueId.value = ''
 }
 
 async function activateSession(credentials) {
@@ -95,6 +101,7 @@ async function activateSession(credentials) {
   persistSessionChoices()
   restoreSnapshot(snapshot)
   await refreshRecords()
+  await refreshReadingLists()
   currentStatus.value = '저장된 학습 세션을 불러왔습니다.'
 }
 
@@ -175,6 +182,8 @@ async function startNewSession() {
 async function analyzeArticle() {
   errorMessage.value = ''
   saveMessage.value = ''
+  readMessage.value = ''
+  selectedIssueId.value = ''
   if (!url.value.trim() && !pastedText.value.trim()) {
     errorMessage.value = '기사 URL 또는 본문을 입력해 주세요.'
     return
@@ -197,6 +206,7 @@ async function analyzeArticle() {
     studyNote.value = ''
     currentStatus.value = '기사 분석이 완료됐습니다.'
     await refreshRecords()
+    await refreshReadingLists()
   } catch (error) {
     errorMessage.value = error.message
     currentStatus.value = ''
@@ -335,12 +345,47 @@ async function saveStudyRecord() {
   }
 }
 
+async function markArticleRead() {
+  if (!articleResult.value || !sessionReady.value || busy.value) return
+  errorMessage.value = ''
+  readMessage.value = ''
+  busy.value = true
+  try {
+    const result = await sessionRequest(`/api/sessions/${sessionId.value}/articles/mark-read`, {
+      method: 'POST',
+      body: JSON.stringify({ article: articleResult.value, issue_id: selectedIssueId.value }),
+    })
+    readMessage.value = result.message
+    selectedIssueId.value = ''
+    await refreshReadingLists()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    busy.value = false
+  }
+}
+
 async function refreshRecords() {
   if (!sessionId.value) return
   try {
     studyRecords.value = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`)
   } catch {
     studyRecords.value = []
+  }
+}
+
+async function refreshReadingLists() {
+  if (!sessionId.value) return
+  try {
+    const [articles, issues] = await Promise.all([
+      sessionRequest(`/api/sessions/${sessionId.value}/articles`),
+      sessionRequest(`/api/sessions/${sessionId.value}/industry-issues`),
+    ])
+    readArticles.value = articles
+    industryIssues.value = issues
+  } catch {
+    readArticles.value = []
+    industryIssues.value = []
   }
 }
 
@@ -410,6 +455,19 @@ initializeSession()
           <div class="issue-block">
             <span class="mini-label">산업 이슈</span>
             <p>{{ articleResult.analysis.key_issue }}</p>
+          </div>
+          <div class="read-actions">
+            <label class="field-label" for="issue-group">같은 산업 이슈에 묶기 <span>선택</span></label>
+            <select id="issue-group" v-model="selectedIssueId" class="text-input" :disabled="busy">
+              <option value="">자동으로 이슈 연결</option>
+              <option v-for="issue in industryIssues" :key="issue.issue_id" :value="issue.issue_id">
+                {{ issue.title }} · {{ issue.article_count }}건
+              </option>
+            </select>
+            <button class="button button-secondary button-wide" :disabled="busy || !sessionReady" @click="markArticleRead">
+              읽은 기사로 저장 <span aria-hidden="true">✓</span>
+            </button>
+            <p v-if="readMessage" class="save-success">{{ readMessage }}</p>
           </div>
           <div class="term-section">
             <div class="term-section-heading"><span class="mini-label">읽기 전 핵심 용어</span><span>{{ terms.length }}개</span></div>
@@ -526,6 +584,35 @@ initializeSession()
           </div>
           <p v-else class="records-empty">저장된 용어가 없습니다. 기사를 분석하고 학습 기록을 저장해 보세요.</p>
           <p class="privacy-note">기록은 로컬 SQLite에 저장됩니다.</p>
+        </section>
+
+        <section class="card issues-card">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">READING HISTORY</p><h2>읽은 기사와 산업 이슈</h2></div>
+            <button class="text-button" @click="refreshReadingLists">새로고침</button>
+          </div>
+          <div v-if="industryIssues.length" class="issue-list">
+            <article v-for="issue in industryIssues.slice(0, 5)" :key="issue.issue_id" class="saved-issue">
+              <div class="saved-issue-heading"><strong>{{ issue.title }}</strong><span>{{ issue.article_count }}건</span></div>
+              <a v-for="article in issue.articles.slice(0, 3)" :key="article.article_id"
+                 :href="article.source_url?.startsWith('http') ? article.source_url : undefined"
+                 :target="article.source_url?.startsWith('http') ? '_blank' : undefined"
+                 :rel="article.source_url?.startsWith('http') ? 'noreferrer' : undefined">
+                {{ article.title }}
+              </a>
+            </article>
+          </div>
+          <p v-else-if="!readArticles.length" class="records-empty">읽은 기사를 저장하면 같은 산업 이슈별로 모아 보여드립니다.</p>
+          <div v-if="readArticles.length" class="issue-list recent-articles">
+            <span class="mini-label">최근 저장한 기사</span>
+            <article v-for="article in readArticles.slice(0, 5)" :key="article.article_id" class="saved-issue">
+              <a :href="article.source_url?.startsWith('http') ? article.source_url : undefined"
+                 :target="article.source_url?.startsWith('http') ? '_blank' : undefined"
+                 :rel="article.source_url?.startsWith('http') ? 'noreferrer' : undefined">{{ article.title }}</a>
+              <span v-if="article.issue_title" class="saved-issue-label">{{ article.issue_title }}</span>
+            </article>
+          </div>
+          <p class="privacy-note">기사는 현재 세션 안에서만 보입니다.</p>
         </section>
       </div>
     </section>

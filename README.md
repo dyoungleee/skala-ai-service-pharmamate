@@ -157,6 +157,9 @@ Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니
 - `PUT /api/sessions/{session_id}/article`: 세션의 현재 기사 저장
 - `POST /api/sessions/{session_id}/chat/stream`: 세션 문맥을 불러 답변하고 대화 저장
 - `GET/POST /api/sessions/{session_id}/study-records`: 세션 전용 학습 기록 조회·저장
+- `POST /api/sessions/{session_id}/articles/mark-read`: 읽은 기사 저장, 중복 판정, 이슈 연결
+- `GET /api/sessions/{session_id}/articles`: 세션의 읽은 기사 목록
+- `GET /api/sessions/{session_id}/industry-issues`: 이슈별 기사 묶음
 
 요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 API는 localhost 단일 사용자 개발용이며 로그인·세션 접근 제어는 F7 범위입니다.
 
@@ -187,6 +190,12 @@ Vue 화면은 기사 입력·분석, 핵심 용어 선택, SSE 채팅, 출처·�
 익명 세션마다 무작위 bearer 토큰을 발급합니다. 브라우저는 토큰을 로컬 세션 목록에 저장하고, 서버에는 토큰의 SHA-256 해시만 둡니다. 세션 ID만 알거나 다른 세션 토큰을 보내면 조회·저장할 수 없습니다. 기사, 대화, 새 Vue 학습 기록 및 임베딩은 세션 ID로 분리하며, 세션에서 검토 후 저장한 기록만 그 세션의 RAG 검색에 들어갑니다. 기존 Notebook/Gradio 기록은 보존하고 새 Vue 세션으로 자동 복사하지 않습니다.
 
 현재 구성은 사용자 로그인 없이 `127.0.0.1`에서 실행하는 단일 사용자 개발 앱입니다. 브라우저 로컬 저장소의 bearer 토큰은 브라우저 프로필 사용자에게 접근 권한을 부여하므로 다른 사람과 프로필을 공유하지 마세요. 외부 공개 전에는 계정 인증, HTTPS, 세션 만료·회수 정책을 추가해야 합니다. 상세 설계와 테스트는 [F7.1 보고서](docs/experiments/F7_1_sessions.md)와 [ADR-001](docs/adr/ADR-001-vue-fastapi-modular-monolith.md)에 기록했습니다.
+
+## F7.2 읽은 기사와 산업 이슈
+
+기사를 읽은 뒤 `읽은 기사로 저장`을 누르면 현재 세션 안에 저장합니다. 정규화한 URL, 본문 SHA-256, 정규화한 제목을 비교해 중복 등록을 막습니다. 서로 다른 기사여도 회사·후보물질 등 명시된 엔티티가 겹치고, 이슈 문구·사건 유형·임상 단계의 유사도가 기준을 넘으면 같은 이슈에 자동으로 묶습니다. 단계나 후보물질이 명확히 다르면 별도 이슈로 둡니다. 자동 판정이 맞지 않으면 화면에서 저장된 이슈를 직접 선택할 수 있습니다.
+
+읽은 기사 및 이슈 목록도 세션별로 분리합니다. 자동 판정 기준과 작은 합성 평가셋의 결과·한계는 [F7.2 실험 보고서](docs/experiments/F7_2_article_issue_management.md)에 정리했습니다.
 
 ## 제한 사항과 향후 개선
 

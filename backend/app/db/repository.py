@@ -140,6 +140,39 @@ def initialize_database():
         );
         CREATE INDEX IF NOT EXISTS idx_session_study_qa_scope
             ON session_study_qa(session_id, term_key, created_at);
+        CREATE TABLE IF NOT EXISTS session_industry_issues (
+            issue_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            issue_text TEXT NOT NULL DEFAULT '',
+            entities_json TEXT NOT NULL DEFAULT '[]',
+            event_type TEXT NOT NULL DEFAULT '',
+            clinical_phase TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(session_id, issue_id),
+            FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_issues_scope
+            ON session_industry_issues(session_id, updated_at);
+        CREATE TABLE IF NOT EXISTS session_articles (
+            session_id TEXT NOT NULL,
+            article_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            source_url TEXT NOT NULL DEFAULT '',
+            canonical_url TEXT NOT NULL DEFAULT '',
+            normalized_title TEXT NOT NULL DEFAULT '',
+            content_hash TEXT NOT NULL DEFAULT '',
+            article_text TEXT NOT NULL DEFAULT '',
+            analysis_json TEXT NOT NULL DEFAULT '{}',
+            issue_id TEXT,
+            read_at TEXT NOT NULL,
+            PRIMARY KEY(session_id, article_id),
+            FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE,
+            FOREIGN KEY(session_id, issue_id) REFERENCES session_industry_issues(session_id, issue_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_session_articles_duplicates
+            ON session_articles(session_id, canonical_url, content_hash, normalized_title);
         """)
 
 def now_local():
@@ -284,6 +317,213 @@ def get_session_study_records(session_id: str) -> list[dict]:
             ORDER BY r.updated_at DESC""", (session_id,)).fetchall()
     return [dict(row) for row in rows]
 
+
+def _article_body_hash(article_text: str) -> str:
+    normalized = " ".join(unicodedata.normalize("NFKC", str(article_text or "")).casefold().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
+
+
+def _normalized_entities(values: list[str] | None) -> set[str]:
+    return {
+        re.sub(r"[^0-9a-z가-힣]+", "", unicodedata.normalize("NFKC", str(value or "")).casefold())
+        for value in (values or [])
+        if re.sub(r"[^0-9a-z가-힣]+", "", unicodedata.normalize("NFKC", str(value or "")).casefold())
+    }
+
+
+def _issue_tokens(value: str) -> set[str]:
+    stop_words = {"제약", "바이오", "업계", "기업", "회사", "신약", "기술", "후보물질", "관련"}
+    return {
+        token for token in re.findall(r"[a-z0-9]+|[가-힣]+", unicodedata.normalize("NFKC", value or "").casefold())
+        if len(token) > 1 and token not in stop_words
+    }
+
+
+def _issue_event_type(value: str) -> str:
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    groups = (
+        ("approval", ("허가", "승인", "인허가", "approval", "approved")),
+        ("clinical", ("임상", "시험", "phase", "1상", "2상", "3상", "4상", "탑라인")),
+        ("deal", ("기술이전", "라이선스", "라이센스", "파트너십", "협력", "계약", "licensing", "license", "collaboration")),
+        ("investment", ("투자", "인수", "합병", "funding", "acquisition", "investment")),
+        ("commercial", ("출시", "매출", "판매", "launch", "sales")),
+        ("patent", ("특허", "patent")),
+    )
+    for name, markers in groups:
+        if any(marker in text for marker in markers):
+            return name
+    return "other"
+
+
+def _clinical_phase(value: str) -> str:
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    match = re.search(r"(?:임상\s*)?([1-4]\s*상|phase\s*[1-4])", text)
+    if not match:
+        return ""
+    phase = re.sub(r"\s+", "", match.group(1))
+    return phase.replace("phase", "phase ") if phase.startswith("phase") else phase
+
+
+def _same_industry_issue(issue_text: str, entities: list[str], event_type: str, phase: str,
+                         candidate: dict) -> bool:
+    new_entities = _normalized_entities(entities)
+    saved_entities = _normalized_entities(json.loads(candidate.get("entities_json") or "[]"))
+    shared_entities = new_entities & saved_entities
+    if not shared_entities:
+        return False
+    new_phase = phase or _clinical_phase(issue_text)
+    saved_phase = candidate.get("clinical_phase") or _clinical_phase(candidate.get("issue_text", ""))
+    if new_phase != saved_phase and (new_phase or saved_phase):
+        return False
+    new_event = event_type or _issue_event_type(issue_text)
+    saved_event = candidate.get("event_type") or _issue_event_type(candidate.get("issue_text", ""))
+    if new_event != saved_event and new_event != "other" and saved_event != "other":
+        return False
+    normalized_new = normalize_article_title(issue_text)
+    normalized_saved = normalize_article_title(candidate.get("issue_text", ""))
+    if normalized_new and normalized_new == normalized_saved:
+        return True
+    if len(new_entities) > 1 and len(saved_entities) > 1 and len(shared_entities) < 2:
+        return False
+    new_tokens = _issue_tokens(issue_text)
+    saved_tokens = _issue_tokens(candidate.get("issue_text", ""))
+    if not new_tokens or not saved_tokens:
+        return False
+    containment = len(new_tokens & saved_tokens) / min(len(new_tokens), len(saved_tokens))
+    return containment >= 0.75
+
+
+def mark_session_article_read(session_id: str, article: dict, issue_id: str = "") -> dict:
+    """Save one read article, dedupe exact copies, and conservatively group its issue."""
+    if not session_exists(session_id):
+        raise KeyError("session not found")
+    analysis = article.get("analysis") or {}
+    article_id = str(article.get("article_id") or "").strip()
+    title = str(article.get("title") or "기사 원문").strip()
+    source_url = str(article.get("url") or "").strip()
+    article_text = str(article.get("article") or "")
+    if not article_id or not analysis:
+        raise ValueError("먼저 기사를 분석해 주세요.")
+    source_key = canonical_article_url(source_url)
+    title_key = normalize_article_title(title)
+    body_hash = _article_body_hash(article_text)
+    key_issue = str(analysis.get("key_issue") or "").strip()
+    entities = [str(item).strip() for item in analysis.get("key_entities") or [] if str(item).strip()]
+    event_type = _issue_event_type(key_issue)
+    phase = _clinical_phase(key_issue)
+    timestamp = now_local()
+
+    with connect_db() as conn:
+        existing_rows = conn.execute("""SELECT article_id,title,canonical_url,content_hash,
+            issue_id FROM session_articles WHERE session_id=? ORDER BY read_at DESC""", (session_id,)).fetchall()
+        duplicate = None
+        duplicate_by = ""
+        for row in existing_rows:
+            if source_key and source_key == row["canonical_url"]:
+                duplicate, duplicate_by = row, "url"
+                break
+            if body_hash and body_hash == row["content_hash"]:
+                duplicate, duplicate_by = row, "content"
+                break
+            if title_key and title_key == normalize_article_title(row["title"]):
+                duplicate, duplicate_by = row, "title"
+                break
+        if duplicate is not None:
+            issue = conn.execute("""SELECT issue_id,title FROM session_industry_issues
+                WHERE session_id=? AND issue_id=?""", (session_id, duplicate["issue_id"])).fetchone() \
+                if duplicate["issue_id"] else None
+            return {
+                "article_id": duplicate["article_id"], "saved": False, "duplicate": True,
+                "duplicate_by": duplicate_by,
+                "issue_id": issue["issue_id"] if issue else None,
+                "issue_title": issue["title"] if issue else "",
+                "message": f"이미 읽은 기사로 저장되어 있습니다 ({duplicate_by}).",
+            }
+
+        if issue_id:
+            selected_issue = conn.execute("""SELECT * FROM session_industry_issues
+                WHERE session_id=? AND issue_id=?""", (session_id, issue_id)).fetchone()
+            if selected_issue is None:
+                raise ValueError("선택한 산업 이슈를 찾을 수 없습니다.")
+            chosen_issue = dict(selected_issue)
+            match_type = "manual"
+        elif key_issue:
+            candidates = conn.execute("""SELECT * FROM session_industry_issues
+                WHERE session_id=? ORDER BY updated_at DESC""", (session_id,)).fetchall()
+            chosen_issue = next((dict(row) for row in candidates if _same_industry_issue(
+                key_issue, entities, event_type, phase, dict(row)
+            )), None)
+            match_type = "automatic" if chosen_issue else "new"
+        else:
+            chosen_issue = None
+            match_type = "none"
+
+        if key_issue and chosen_issue is None:
+            new_issue_id = uuid.uuid4().hex
+            conn.execute("""INSERT INTO session_industry_issues
+                (issue_id,session_id,title,issue_text,entities_json,event_type,clinical_phase,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                (new_issue_id, session_id, key_issue[:300], key_issue,
+                 json.dumps(entities, ensure_ascii=False), event_type, phase, timestamp, timestamp))
+            chosen_issue = {
+                "issue_id": new_issue_id, "title": key_issue[:300], "issue_text": key_issue,
+                "entities_json": json.dumps(entities, ensure_ascii=False), "event_type": event_type,
+                "clinical_phase": phase,
+            }
+        elif chosen_issue is not None:
+            prior_entities = json.loads(chosen_issue.get("entities_json") or "[]")
+            merged_entities = list(dict.fromkeys(prior_entities + entities))
+            conn.execute("""UPDATE session_industry_issues SET entities_json=?,updated_at=?
+                WHERE session_id=? AND issue_id=?""",
+                (json.dumps(merged_entities, ensure_ascii=False), timestamp, session_id, chosen_issue["issue_id"]))
+
+        selected_issue_id = chosen_issue["issue_id"] if chosen_issue else None
+        conn.execute("""INSERT INTO session_articles
+            (session_id,article_id,title,source_url,canonical_url,normalized_title,content_hash,
+             article_text,analysis_json,issue_id,read_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (session_id, article_id, title, source_url, source_key, title_key, body_hash,
+             article_text, json.dumps(analysis, ensure_ascii=False), selected_issue_id, timestamp))
+        conn.execute("UPDATE study_sessions SET updated_at=? WHERE session_id=?", (timestamp, session_id))
+        issue_title = chosen_issue["title"] if chosen_issue else ""
+        return {
+            "article_id": article_id, "saved": True, "duplicate": False,
+            "duplicate_by": "", "issue_id": selected_issue_id,
+            "issue_title": issue_title, "match_type": match_type,
+            "message": "기사를 읽은 기록에 저장했습니다." if not selected_issue_id
+                else f"기사와 산업 이슈를 저장했습니다: {issue_title}",
+        }
+
+
+def get_session_articles(session_id: str, limit: int = 50) -> list[dict]:
+    with connect_db() as conn:
+        rows = conn.execute("""SELECT a.article_id,a.title,a.source_url,a.issue_id,
+            i.title AS issue_title,a.read_at FROM session_articles a
+            LEFT JOIN session_industry_issues i
+              ON i.session_id=a.session_id AND i.issue_id=a.issue_id
+            WHERE a.session_id=? ORDER BY a.read_at DESC LIMIT ?""",
+            (session_id, max(1, min(limit, 200)))).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_session_industry_issues(session_id: str, limit: int = 50) -> list[dict]:
+    with connect_db() as conn:
+        rows = conn.execute("""SELECT i.*,
+            (SELECT COUNT(*) FROM session_articles a
+             WHERE a.session_id=i.session_id AND a.issue_id=i.issue_id) AS article_count
+            FROM session_industry_issues i WHERE i.session_id=?
+            ORDER BY i.updated_at DESC LIMIT ?""",
+            (session_id, max(1, min(limit, 200)))).fetchall()
+        issues = []
+        for row in rows:
+            issue = dict(row)
+            issue["entities"] = json.loads(issue.pop("entities_json") or "[]")
+            issue["articles"] = [dict(article) for article in conn.execute("""SELECT article_id,title,
+                source_url,read_at FROM session_articles WHERE session_id=? AND issue_id=?
+                ORDER BY read_at DESC""", (session_id, issue["issue_id"]))]
+            issues.append(issue)
+    return issues
+
 def get_learned_rows():
     with connect_db() as conn:
         return [dict(x) for x in conn.execute("SELECT * FROM learned_terms ORDER BY first_learned_at DESC")]
@@ -427,6 +667,20 @@ def get_memory_documents(owner_id: str = "local") -> list[dict]:
                     "term_key": row["term_key"], "title": f"학습 Q&A: {row['term_name']}",
                     "content": f"질문: {row['question']}\n답변: {row['answer']}",
                     "source_url": "",
+                })
+            for row in conn.execute("""SELECT article_id,title,source_url,analysis_json
+                FROM session_articles WHERE session_id=? ORDER BY read_at DESC""", (owner_id,)):
+                analysis = json.loads(row["analysis_json"] or "{}")
+                content = (
+                    f"기사 제목: {row['title']}\n요약: {analysis.get('one_line_summary', '')}\n"
+                    f"핵심 이슈: {analysis.get('key_issue', '')}\n"
+                    f"주요 대상: {', '.join(analysis.get('key_entities') or [])}"
+                )
+                documents.append({
+                    "owner_id": owner_id, "source_type": "session_article",
+                    "source_id": row["article_id"], "record_id": f"session_article:{row['article_id']}",
+                    "term_key": "", "title": f"읽은 기사: {row['title']}",
+                    "content": content, "source_url": row["source_url"],
                 })
         return [document for document in documents if document["content"].strip()]
     documents: list[dict] = []
