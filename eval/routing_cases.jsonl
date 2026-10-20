@@ -1,0 +1,24 @@
+{"id":"Q01","question":"이 기사에서 임상 1상이 어떤 단계인지 쉽게 설명해줘.","term":"임상 1상","expected_route":"article"}
+{"id":"Q02","question":"여기서 말하는 ADC가 무엇인지 기사 맥락으로 설명해줘.","term":"ADC","expected_route":"article"}
+{"id":"Q03","question":"이 기사에 나온 바이오마커가 왜 중요한지 알려줘.","term":"바이오마커","expected_route":"article"}
+{"id":"Q04","question":"기사에 적힌 기술과 기존 항암제의 차이를 설명해줘.","term":"항체 치료제","expected_route":"article"}
+{"id":"Q05","question":"이 기사에서 회사가 발표한 핵심 내용을 정리해줘.","term":"","expected_route":"article"}
+{"id":"Q06","question":"CAR-T의 기본 원리를 알려줘.","term":"","expected_route":"article"}
+{"id":"Q07","question":"전에 공부한 ADC 메모를 다시 찾아서 설명해줘.","term":"ADC","expected_route":"memory"}
+{"id":"Q08","question":"내가 예전에 항체에 대해 저장한 학습 기록이 뭐였지?","term":"항체","expected_route":"memory"}
+{"id":"Q09","question":"지난번에 물어본 임상시험 용어와 답변을 찾아줘.","term":"임상시험","expected_route":"memory"}
+{"id":"Q10","question":"내 노트에 적어둔 면역관문 억제제 내용을 보여줘.","term":"면역관문 억제제","expected_route":"memory"}
+{"id":"Q11","question":"예전에 공부한 바이오시밀러 정의를 다시 알려줘.","term":"바이오시밀러","expected_route":"memory"}
+{"id":"Q12","question":"저장된 내 학습 Q&A 중 약물 전달 관련 내용을 찾아줘.","term":"약물 전달","expected_route":"memory"}
+{"id":"Q13","question":"최근 FDA가 승인한 유전자 치료제가 있는지 찾아줘.","term":"","expected_route":"web"}
+{"id":"Q14","question":"현재 이 후보물질의 임상 3상 결과가 발표됐는지 확인해줘.","term":"","expected_route":"web"}
+{"id":"Q15","question":"요즘 제약업계에서 가장 최근에 발표한 ADC 임상 결과를 검색해줘.","term":"ADC","expected_route":"web"}
+{"id":"Q16","question":"오늘 기준으로 이 회사의 신약 승인 상태가 어떻게 돼?","term":"","expected_route":"web"}
+{"id":"Q17","question":"최근 공개된 CAR-T 치료제의 임상 결과를 찾아줘.","term":"CAR-T","expected_route":"web"}
+{"id":"Q18","question":"현재 바이오시밀러 관련 최신 규제 변화가 있는지 확인해줘.","term":"바이오시밀러","expected_route":"web"}
+{"id":"Q19","question":"전에 공부한 ADC 원리와 이번 주 발표된 임상 결과를 비교해줘.","term":"ADC","expected_route":"memory_web"}
+{"id":"Q20","question":"내 저장 기록의 면역항암제 설명과 최근 승인 현황을 함께 정리해줘.","term":"면역항암제","expected_route":"memory_web"}
+{"id":"Q21","question":"지난번에 배운 임상 2상과 이번에 공개된 임상 3상 결과의 차이를 알려줘.","term":"임상시험","expected_route":"memory_web"}
+{"id":"Q22","question":"예전 학습 메모에 있는 유전자 치료 원리와 최신 허가 정보를 같이 설명해줘.","term":"유전자 치료","expected_route":"memory_web"}
+{"id":"Q23","question":"내 노트의 바이오시밀러 내용과 오늘 나온 규제 뉴스를 비교해줘.","term":"바이오시밀러","expected_route":"memory_web"}
+{"id":"Q24","question":"과거에 저장한 항체 약물 전달 Q&A와 최근 관련 임상 결과를 연결해줘.","term":"항체 약물 전달","expected_route":"memory_web"}
