@@ -10,3 +10,4 @@
 {"case_id": "V10-unverified-approval", "expected": "flag", "question": "현재 승인 상태는?", "answer": "이 약은 FDA 승인을 받아 판매 중입니다.", "evidence": "가상 기사: 해당 약물은 초기 임상시험 중이며 승인 상태는 언급되지 않았다."}
 {"case_id": "V11-invented-dose", "expected": "flag", "question": "권장 용량은 얼마인가요?", "answer": "권장 용량은 하루 20mg입니다.", "evidence": "가상 제품 설명에는 용량 정보가 포함되어 있지 않다."}
 {"case_id": "V12-overstated-safety", "expected": "flag", "question": "안전성 결과가 어땠나요?", "answer": "시험에서 안전성과 내약성이 입증되었고 중대한 부작용은 없었습니다.", "evidence": "가상 기사: 이 시험은 안전성과 내약성을 평가하기 위해 시작되었다. 실제 안전성 결과는 아직 발표되지 않았다."}
+{"case_id": "V13-general-empty-evidence", "expected": "pass", "question": "단클론 항체와 화학 합성 의약품은 어떻게 달라?", "answer": "단클론 항체는 특정 표적에 결합하는 단백질 의약품입니다. 화학 합성 의약품은 화학 반응으로 만든 분자 약물입니다. 두 유형은 분자 구조와 만드는 방식이 다릅니다.", "evidence": ""}

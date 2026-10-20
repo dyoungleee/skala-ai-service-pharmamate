@@ -79,6 +79,23 @@ class ValidatorTests(unittest.TestCase):
         answer = "ADC는 항체와 약물을 연결해 표적에 전달하는 방식입니다."
         self.assertEqual(unsupported_numeric_markers(answer, ""), [])
 
+    def test_stable_general_definition_without_sources_can_pass(self):
+        answer = "단클론 항체는 특정 표적에 결합하는 단백질 의약품입니다. 화학 합성 의약품은 화학 반응으로 만든 분자 약물입니다."
+        result = validate_answer(
+            FakeJudge(AnswerValidation(status="insufficient_evidence")),
+            question="단클론 항체와 화학 합성 의약품은 어떻게 달라?",
+            answer=answer, evidence="",
+        )
+        self.assertEqual(result["status"], "pass")
+
+    def test_general_question_does_not_allow_numeric_claim_without_evidence(self):
+        result = validate_answer(
+            FakeJudge(AnswerValidation(status="pass")),
+            question="이 약의 효과는 무엇인가요?",
+            answer="임상 성공률은 87%입니다.", evidence="",
+        )
+        self.assertEqual(result["status"], "revise")
+
 
 if __name__ == "__main__":
     unittest.main()

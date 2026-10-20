@@ -191,6 +191,7 @@ def _run(
         "validation_status": result.get("validation_status"),
         "validation_retries": result.get("validation_retries", 0),
         "unsupported_claims": result.get("unsupported_claims", []),
+        "validation_feedback": result.get("validation_feedback", ""),
         "latency_seconds": elapsed,
         "tokens": None,
         "cost": None,
