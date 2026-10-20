@@ -125,7 +125,7 @@ LangGraph 구성은 `backend/app/agents/graph.py`, 환경 설정은 `backend/app
 
     python eval/compare_answers.py --all --baseline-ref 9814fc2
 
-사례별 Before/After 답변, 라우트, Validator 결과, 응답 시간은 로컬 `eval/results/latest.jsonl`에 기록됩니다. 집계와 한계는 [F4 종합 평가 보고서](docs/experiments/F4_overall_evaluation.md), 발표 자료는 [PharmaMate 3.0 결과 요약](outputs/PharmaMate_3.0_Implementation_Results.pptx)에서 확인할 수 있습니다. 검색·Validator 상세 조건은 `docs/experiments/`에 기능별로 정리했습니다.
+사례별 Before/After 답변, 라우트, Validator 결과, 응답 시간은 로컬 `eval/results/latest.jsonl`에 기록됩니다. 집계와 한계는 [F4 종합 평가 보고서](docs/experiments/F4_overall_evaluation.md), 발표 자료는 [PharmaMate 3.0 결과 요약](outputs/PharmaMate_3.0_Implementation_Results_F8.pptx)에서 확인할 수 있습니다. 검색·Validator·F8 기술 검토 조건은 `docs/experiments/`에 기능별로 정리했습니다.
 
 ## F5 맥락 기반 후속 질문
 
@@ -161,7 +161,7 @@ Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니
 - `GET /api/sessions/{session_id}/articles`: 세션의 읽은 기사 목록
 - `GET /api/sessions/{session_id}/industry-issues`: 이슈별 기사 묶음
 
-요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 API는 localhost 단일 사용자 개발용이며 로그인·세션 접근 제어는 F7 범위입니다.
+요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 앱은 localhost에서 실행하는 로그인 없는 개발용이며, 익명 세션별 bearer token 접근 제어가 구현되어 있습니다.
 
 스트림 이벤트는 `status`, `token`, `sources`, `recommendations`, `done`, `error`입니다. Agent의 답변 생성·Validator 처리 중 단계 상태를 전송하고, 최종 답변은 근거 검증이 완료된 뒤 작은 조각으로 전송합니다. 따라서 검증 전 초안은 브라우저에 보이지 않습니다. Vue 클라이언트 연결은 F6.3에서 제공합니다.
 
@@ -224,12 +224,16 @@ MCP 호스트가 위 명령을 stdio 서버로 실행합니다. 모듈은 API와
 
 `memory_web` 경로에서 개인 학습 기록과 Tavily 검색을 병렬로 실행하고, 둘 다 완료된 뒤 기존 답변·검증 경로로 합칩니다. Tavily 미설정 시 빠른 실패 응답 경로는 기존 순차 fallback을 사용합니다. 각 source에 고정 80 ms를 둔 합성 30회 실험에서 p50은 `166.60 ms → 84.60 ms`(49.2% 감소), 두 결과 모두 성공 및 내용 일치를 확인했습니다. 이는 외부 API의 실제 지연 비교가 아닙니다. [F8.4 실험 보고서](docs/experiments/F8_4_parallel_sources.md)와 [ADR-008](docs/adr/ADR-008-parallel-source-retrieval.md)에 범위와 한계를 적었습니다.
 
+## F8.5 Ollama 호환성 검토
+
+로컬 Ollama `qwen3:8b`를 OpenAI 호환 LangChain 경로에 연결해 라우터·답변 추천·Validator 구조화 스키마가 모두 파싱되는 것을 확인했습니다. 같은 24개 라우팅 질문에서 `qwen3:0.6b`는 `9/24 (37.5%)`, p50 `1.388초`; `gpt-4o-mini`는 `24/24`, p50 `1.046초`였습니다. 8B의 schema별 지연은 21.3~33.0초여서 현재 런타임 provider로 채택하지 않았습니다. 재현 명령은 `python eval/run_ollama_routing_experiment.py qwen3:0.6b` 및 `python eval/run_ollama_smoke.py --model qwen3:8b`; [실험 보고서](docs/experiments/F8_5_ollama_compatibility.md)와 [ADR-003](docs/adr/ADR-003-ollama-model.md)에 한계와 함께 기록했습니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.
 - 기사 분석과 질문의 용어 관련성은 LLM의 판단을 사용하므로 누락이나 오판이 생길 수 있습니다. 메모를 확인한 뒤 저장하세요.
 - Tavily 검색은 최신 정보를 확인하는 보조 수단입니다. 출처의 신뢰성과 맥락을 직접 확인해야 합니다.
-- 세션 복원은 아직 지원하지 않습니다. 앱을 새로고침하기 전에 필요한 메모와 Q&A를 저장하세요.
+- 브라우저 프로필의 로컬 저장소에 세션 접근 토큰이 있습니다. 같은 프로필에서는 새로고침 후 세션을 복원할 수 있고, 로컬 저장소를 지우면 해당 토큰으로 세션에 다시 접근할 수 없습니다.
 - 향후에는 관심 분야별 기사 추천, 용어 재등장·오답 기반 복습, 검색 근거 검증을 개선할 수 있습니다.
 
 ## 문제 해결

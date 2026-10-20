@@ -256,14 +256,14 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 
 **시간이 부족할 때:** F0~F3의 실제 작동과 F4의 재현 가능한 증거를 우선한다. 새 모델로의 교체, 새 프런트엔드, 다수의 선택 기술을 한꺼번에 도입하지 않는다. Day3 17시 30분 발표 전에는 시연 흐름과 PPT를 확인한다.
 
-**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`, F7.1 `d620925`, F7.2 `cdf7b5c`, F8.1 `324b067`. F8.2 Dynamic Planning 검토는 실험 결과 보류한다. F8.3 MCP Server는 `8bf3673`에서 구현·푸시했다. F8.4 병렬 source 실행은 이번 단계에서 반영한다. 각 단계의 조건과 한계는 `docs/experiments/`에 기록한다. F4 종합 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)와 결과 요약 PPT로 남긴다.
+**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`, F7.1 `d620925`, F7.2 `cdf7b5c`, F8.1 `324b067`. F8.2 Dynamic Planning은 추가 호출 비용이 품질 개선으로 이어지지 않아 보류한다. F8.3 MCP Server는 `8bf3673`, F8.4 병렬 source 실행은 `ff5e9f6`에서 구현·푸시했다. F8.5 Ollama는 구조화 출력 호환성을 확인했지만 지연·라우팅 정확도 결과에 따라 도입을 보류한다. F8.1~F8.5의 조건·결과·한계는 `docs/experiments/`에 기능별로 기록한다. 종합 발표 자료는 [F8 결과 PPT](../outputs/PharmaMate_3.0_Implementation_Results_F8.pptx), F4 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)에 남긴다.
 
 ### 10.2 3.0 후속 범위
 
 1. **F5 — 동적 후속 질문 (완료):** 답변과 질문을 한 번의 구조화 출력으로 생성한다. 원리 심화·개념 연결·한계/응용 질문 3개와 학습 목표를 표시한다. 합성 입력 4건에서 별도 생성 방식과 지연·토큰·비용을 비교하고, 결과는 [F5 실험 보고서](experiments/F5_dynamic_followup_questions.md)에 기록했다.
-2. **F6 — API와 화면 (F6.1~F6.3 구현):** FastAPI 기사/질문·학습 기록 API, 검증 답변 SSE, Vue 화면을 연결했다. 기사 분석 → 질문 → 출처·후속 질문 확인 → 검토한 학습 기록 저장 흐름을 제공한다. 백엔드 28개 단위 테스트와 Vue production build를 통과했다. 실 API와 사용자 DB를 이용한 종단 간 확인은 별도로 남아 있다. API 조건은 [F6.1 보고서](experiments/F6_1_fastapi_api.md), SSE 동작은 [F6.2 보고서](experiments/F6_2_sse_streaming.md), Vue 연결은 [F6.3 보고서](experiments/F6_3_vue_frontend.md)에 기록한다.
+2. **F6 — API와 화면 (F6.1~F6.3 구현):** FastAPI 기사/질문·학습 기록 API, 검증 답변 SSE, Vue 화면을 연결했다. 기사 분석 → 질문 → 출처·후속 질문 확인 → 검토한 학습 기록 저장 흐름을 제공한다. 백엔드 통합 테스트 37개와 Vue production build를 통과했다. 실제 외부 모델·Tavily를 연결한 브라우저 종단 간 확인은 수행하지 않았다. API 조건은 [F6.1 보고서](experiments/F6_1_fastapi_api.md), SSE 동작은 [F6.2 보고서](experiments/F6_2_sse_streaming.md), Vue 연결은 [F6.3 보고서](experiments/F6_3_vue_frontend.md)에 기록한다.
 3. **F7 — 세션과 이슈:** F7.1 익명 세션 토큰, 대화·기사 복원, 세션 소유 학습 기록과 RAG 범위를 구현했다. F7.2에서 세션 안의 기사 URL·본문·제목 중복 판정, 산업 이슈 자동·수동 연결 및 UI 목록을 추가했다. 기존 SQLite 테이블은 보존하고 새 테이블만 추가한다. 합성 기준 비교와 한계는 [F7.1 보고서](experiments/F7_1_sessions.md), [F7.2 보고서](experiments/F7_2_article_issue_management.md)에 있다.
-4. **F8 — 선택 기술:** Query Routing 개선, Dynamic Planning, MCP, 병렬 실행은 섹션 5의 대조 실험과 ADR을 거쳐 채택한다.
+4. **F8 — 선택 기술 (검토 완료):** 합성 질문 24개에서 개선된 Query Routing을 채택하고, MCP 및 memory/web 병렬 실행을 도입했다. Dynamic Planning과 Ollama는 각각 추가 비용과 낮은 라우팅 정확도·긴 지연으로 보류했다. 개별 결과와 결정 근거를 보고서·ADR로 남겼다.
 
 ### 10.3 기능별 완료·커밋·푸시 절차
 
@@ -279,23 +279,23 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 
 ### 과제 제출 시점
 
-- [ ] `python eval/compare_answers.py --case-id RAG-01 --baseline-ref HEAD` 및 `--all`로 승인된 기준선과 작업 트리 후보의 답변을 터미널에서 나란히 확인할 수 있다.
-- [ ] 2.2 기준선과 동일 평가 질문을 보존하고 비교 조건을 문서화했다.
-- [ ] 기사 분석 → 질문 → 검토한 학습 기록 저장이 실행된다.
-- [ ] 개인 학습 RAG가 원본 기록을 인용하며 검색 품질과 지연을 측정했다.
-- [ ] Validator가 근거 부족을 표시하고 수정 재시도 횟수를 제한한다.
-- [ ] 핵심 기능 검증 결과와 장애·트레이드오프가 README 및 ADR에 남아 있다.
-- [ ] README와 PPT에 같은 입력의 Before/After 수치, 실험 조건, 한계를 일관되게 제시한다.
-- [ ] GitHub `main`에 제출 버전이 푸시되고 Git 주소와 결과 보고서 주소가 등록됐다.
+- [x] `python eval/compare_answers.py --all --demo`로 기준선과 후보 답변을 터미널에서 확인할 수 있고, 실제 실행 모드도 구현했다. demo는 LLM을 호출하지 않는 고정 예시임을 출력한다.
+- [x] 2.2 기준선과 동일 평가 질문을 보존하고 비교 조건을 문서화했다.
+- [x] 기사 분석 → 질문 → 검토한 학습 기록 저장 흐름을 API 및 Vue에 구현했다.
+- [x] 개인 학습 RAG가 원본 기록 ID를 연결하며 검색 품질과 지연을 측정했다.
+- [x] Validator가 근거 부족을 표시하고 재작성 횟수를 제한한다.
+- [x] 핵심 기능 검증 결과와 장애·트레이드오프를 README, 실험 보고서, ADR에 기록했다.
+- [x] README와 PPT에 Before/After 수치, 실험 조건, 한계를 제시했다.
+- [x] 제출 변경분을 GitHub `main`에 푸시했다. 저장소 및 보고서 주소는 README와 제출 안내에 등록한다.
 
 ### 3.0 확장 완료 시점
 
-- [ ] Vue에서 기사 입력 → 분석 → Agent 질문 → 기록 저장이 작동한다.
-- [ ] SSE 응답과 연결 끊김·오류 처리 시나리오가 작동한다.
+- [x] Vue에서 기사 입력 → 분석 → Agent 질문 → 기록 저장 흐름을 구현했다. API 테스트는 가짜 Agent·임시 DB로 검증했다.
+- [x] SSE는 검증된 답변만 전송하고, API 오류·사용자 취소·연결 예외를 화면 오류로 처리한다. 실제 네트워크 단절 브라우저 E2E는 수행하지 않았다.
 - [x] 재접속 후 허가된 세션의 대화를 복원할 수 있다. API 토큰·복원 테스트와 Vue production build를 통과했다.
 - [x] 답변 직후 학습 목적이 다른 후속 질문 3개가 갱신된다.
 - [x] 동일 기사 재등록을 막고, 서로 다른 기사가 같은 산업 이슈를 다루면 연결한다. 합성 5쌍 기준 중복 Recall 0.5→1.0, 이슈 연결 precision/recall 1.0/1.0; 표본 한계는 F7.2 보고서에 기록했다.
-- [ ] Ollama 사용 가능성과 선택 기술의 채택·보류 이유를 실측 및 ADR로 설명한다.
+- [x] Ollama 구조화 출력 smoke, 24개 라우팅 비교, 선택 기술의 채택·보류 이유를 실측 및 ADR로 설명한다.
 
 ## 12. 위험 및 트레이드오프
 
