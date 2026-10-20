@@ -59,9 +59,33 @@ ARTICLE_TAIL_HEADINGS = {
     "추천기사",
 }
 ARTICLE_TAIL_PATTERNS = [
-    re.compile(r"저작권자|무단\s*전재|재배포\s*금지"),
+    re.compile(r"저작권자|저작권\s*[:：=]|무단\s*전재|재배포\s*금지|\bcopyright\b|©|ⓒ", re.IGNORECASE),
     re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b"),
 ]
+ARTICLE_INLINE_CREDIT_PATTERNS = [
+    re.compile(r"(?:^|[\s·|—-])(?:사진|이미지)\s*(?:(?:출처|제공|저작권)\s*)?[:：=]\s*", re.IGNORECASE),
+    re.compile(r"(?:^|\s)(?:photo|image)\s+(?:(?:credit|source|by)\b|courtesy\s+of)\s*[:：=]?\s*", re.IGNORECASE),
+]
+ARTICLE_IMAGE_CREDIT_PATTERNS = [
+    re.compile(r"^(?:사진|이미지)\s*(?:(?:출처|제공|저작권)\s*)?[:：=]\s*.+$", re.IGNORECASE),
+    re.compile(r"^(?:사진|이미지)\s*(?:출처|제공|저작권)\s*[:：=]?\s*.*$", re.IGNORECASE),
+    re.compile(r"^(?:자료\s*사진|사진\s*자료)\s*[:：=]?\s*.*$", re.IGNORECASE),
+    re.compile(r"^(?:photo|image)\s*(?:(?:credit|source|by|courtesy\s+of)\s*)?[:：=]\s*.+$", re.IGNORECASE),
+    re.compile(r"^(?:©|ⓒ|copyright(?:\s*©)?)\s*.+$", re.IGNORECASE),
+]
+
+
+def _clean_article_lines(raw_lines) -> str:
+    lines = []
+    for raw_line in raw_lines:
+        line = re.sub(r"\s+", " ", str(raw_line)).strip()
+        if not line:
+            continue
+        if any(pattern.match(line) for pattern in ARTICLE_IMAGE_CREDIT_PATTERNS):
+            continue
+        if not lines or line != lines[-1]:
+            lines.append(line)
+    return "\n".join(_trim_article_tail(lines))
 
 
 def _trim_article_tail(lines: list[str]) -> list[str]:
@@ -70,8 +94,16 @@ def _trim_article_tail(lines: list[str]) -> list[str]:
         heading = re.sub(r"[\s:：#]+", "", line).lower()
         if heading in ARTICLE_TAIL_HEADINGS:
             return lines[:index]
-        if any(pattern.search(line) for pattern in ARTICLE_TAIL_PATTERNS):
-            return lines[:index]
+        match = None
+        for pattern in ARTICLE_TAIL_PATTERNS + ARTICLE_INLINE_CREDIT_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                break
+        if match:
+            # Preserve an article sentence if a publisher appended the copyright
+            # notice to the same text line.
+            article_text = line[:match.start()].rstrip(" ·|—-:")
+            return lines[:index] + ([article_text] if article_text else [])
     return lines
 
 def _clean_article_node(node) -> str:
@@ -79,13 +111,7 @@ def _clean_article_node(node) -> str:
     for selector in ARTICLE_NOISE_SELECTORS:
         for unwanted in fragment.select(selector):
             unwanted.decompose()
-    lines=[]
-    for line in fragment.get_text('\n',strip=True).splitlines():
-        line=re.sub(r'\s+',' ',line).strip()
-        if line and (not lines or line != lines[-1]):
-            lines.append(line)
-    lines = _trim_article_tail(lines)
-    return '\n'.join(lines)
+    return _clean_article_lines(fragment.get_text('\n', strip=True).splitlines())
 
 def _jsonld_article_body(value):
     if isinstance(value,dict):
@@ -133,6 +159,7 @@ def _page_title(soup):
 def load_article(url: str = "", pasted_text: str = ""):
     url, pasted_text = (url or "").strip(), (pasted_text or "").strip()
     if pasted_text:
+        pasted_text = _clean_article_lines(pasted_text.splitlines())
         if len(pasted_text) < 120:
             raise ValueError("기사 본문이 너무 짧습니다. 본문을 충분히 붙여넣어 주세요.")
         return pasted_text, {"source": url or "직접 입력", "title": "(제목 없음)", "load_method": "manual"}
