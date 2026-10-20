@@ -96,7 +96,7 @@ OPENAI_API_KEY는 필수이고, TAVILY_API_KEY는 최신 웹 검색을 위한 �
 
 `HEAD`는 기능 개발 직전의 승인된 커밋이어야 합니다. 기준선은 해당 커밋의 노트북을 읽고, 개선 후보는 현재 작업 트리의 노트북을 사용합니다. 새 기능이 별도 Python 모듈에 있으면 `--candidate-runner package.module:function`으로 실행기를 지정합니다. 학습 기록은 샘플 fixture만 사용하며, SQLite와 Tavily에는 접근하지 않습니다. 실제 답변 기록은 로컬 `eval/results/latest.jsonl`에 저장되고 Git에서 제외됩니다.
 
-LangGraph Agent 그래프는 `backend/app/agents/graph.py`에서 조립합니다. 노트북은 모델·검색·학습 기록 조회 함수를 주입하고 기존 Gradio 화면을 연결합니다.
+LangGraph Agent 그래프는 `backend/app/agents/graph.py`, 설정은 `backend/app/core/config.py`, SQLite 저장소는 `backend/app/db/repository.py`, 기사 본문 추출은 `backend/app/services/article_extraction.py`에 있습니다. 노트북은 이 모듈을 불러 기존 Gradio 화면을 연결합니다.
 
 LangGraph 구성은 `backend/app/agents/graph.py`, 환경 설정은 `backend/app/core/config.py`, SQLite 접근은 `backend/app/db/repository.py`, 기사 본문 추출은 `backend/app/services/article_extraction.py`에 있습니다. 노트북은 이 모듈들을 불러 기존 Gradio 흐름을 연결합니다. F1은 동작을 바꾸지 않는 모듈화 단계이므로, 비교에서는 답변 변화보다 기능 회귀 여부를 확인합니다.
 
