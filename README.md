@@ -119,6 +119,14 @@ LangGraph Agent 그래프는 `backend/app/agents/graph.py`, 설정은 `backend/a
 
 LangGraph 구성은 `backend/app/agents/graph.py`, 환경 설정은 `backend/app/core/config.py`, SQLite 접근은 `backend/app/db/repository.py`, 기사 본문 추출은 `backend/app/services/article_extraction.py`에 있습니다. 노트북은 이 모듈들을 불러 기존 Gradio 흐름을 연결합니다. F1은 동작을 바꾸지 않는 모듈화 단계이므로, 비교에서는 답변 변화보다 기능 회귀 여부를 확인합니다.
 
+## F4 종합 실험 결과
+
+원본 PharmaMate 2.2와 현재 후보를 같은 합성 질문 4건으로 비교하려면 다음을 실행합니다.
+
+    python eval/compare_answers.py --all --baseline-ref 9814fc2
+
+사례별 Before/After 답변, 라우트, Validator 결과, 응답 시간은 로컬 `eval/results/latest.jsonl`에 기록됩니다. 집계와 한계는 [F4 종합 평가 보고서](docs/experiments/F4_overall_evaluation.md), 발표 자료는 [PharmaMate 3.0 결과 요약](outputs/PharmaMate_3.0_Implementation_Results.pptx)에서 확인할 수 있습니다. 검색·Validator 상세 조건은 `docs/experiments/`에 기능별로 정리했습니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.
