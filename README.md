@@ -56,6 +56,7 @@ Python 3.11과 VS Code의 Python 및 Jupyter 확장을 권장합니다. VS Code�
     OPENAI_API_KEY=여기에_OpenAI_API_키
     TAVILY_API_KEY=여기에_Tavily_API_키_선택
     PHARMAMATE_MODEL=gpt-4o-mini
+    PHARMAMATE_EMBEDDING_MODEL=text-embedding-3-small
     # 저장 폴더를 바꿀 때만 설정
     # PHARMAMATE_DATA_DIR=/원하는/절대/경로
 
@@ -82,6 +83,18 @@ OPENAI_API_KEY는 필수이고, TAVILY_API_KEY는 최신 웹 검색을 위한 �
 - 다른 위치를 사용하려면 .env에 PHARMAMATE_DATA_DIR을 설정합니다.
 - 저장 데이터는 로컬 컴퓨터에 남습니다. 다른 컴퓨터로 옮길 때는 SQLite 파일도 함께 복사하고, 필요한 기록은 주기적으로 백업하세요.
 - 같은 데이터베이스를 사용하면 기존 2.1 학습 기록을 이어서 사용할 수 있습니다. 이미 저장된 중복 기사 행은 자동으로 정리하지 않습니다.
+
+## 개인 학습 RAG (F2)
+
+용어, 학습 메모, 저장한 Q&A, 기사 맥락을 검색 가능한 기록으로 사용합니다. 원본은 기존 SQLite 테이블에 두고, `memory_embeddings` 테이블에는 청크별 임베딩과 원본 기록 ID를 파생 인덱스로 저장합니다. 내용이나 임베딩 모델이 바뀌면 해당 청크를 다시 임베딩하고, 삭제된 기록의 인덱스는 제거합니다. 검색은 임베딩 유사도와 단어 일치를 함께 사용하며 임베딩 API에 문제가 생기면 기존 용어 단어 검색으로 돌아갑니다.
+
+기본 임베딩 모델은 `text-embedding-3-small`이며 `.env`의 `PHARMAMATE_EMBEDDING_MODEL`로 바꿀 수 있습니다. 새 기록과 질문 텍스트는 임베딩을 위해 OpenAI API로 전송됩니다. 앱은 현재 단일 사용자용이므로 로컬 범위(`local`)만 검색하고, 다른 소유자 범위는 세션별 저장소가 추가될 때까지 반환하지 않습니다. 벡터는 기존 SQLite 파일에 남으므로 백업 시 데이터베이스 파일을 함께 복사하세요.
+
+합성 평가 자료로 검색 실험을 다시 실행하려면 다음을 사용합니다. 이 명령은 실제 임베딩 API를 호출하며 결과 JSONL은 Git에서 제외된 `eval/results/`에 저장됩니다.
+
+    python eval/run_rag_experiment.py
+
+실험 조건과 측정 결과는 [F2 실험 보고서](docs/experiments/F2_personalized_rag.md), SQLite 인덱스를 선택한 이유는 [ADR-002](docs/adr/ADR-002-sqlite-vector-index.md)에 있습니다.
 
 ## 터미널 답변 비교
 

@@ -17,6 +17,30 @@ ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK_PATH = ROOT / "PharmaMate_2_0.ipynb"
 
 
+
+def lexical_fixture_search(question: str, records: list[dict], limit: int = 5) -> list[dict]:
+    """Approximate the 2.2 lexical lookup against an isolated evaluation corpus."""
+    import re
+
+    question_low = (question or "").casefold()
+    tokens = [token for token in re.findall(r"[A-Za-z0-9가-힣]+", question_low) if len(token) > 1]
+    ranked = []
+    for record in records:
+        aliases = record.get("aliases") or record.get("aliases_json") or []
+        if isinstance(aliases, str):
+            try:
+                aliases = json.loads(aliases)
+            except json.JSONDecodeError:
+                aliases = [aliases]
+        names = list(aliases) + [record.get("term_name", "")]
+        score = sum(4 for name in names if len(str(name).strip()) >= 2 and str(name).casefold() in question_low)
+        definition = str(record.get("simple_definition", "")).casefold()
+        score += sum(1 for token in tokens if token in definition)
+        if score:
+            ranked.append((score, record))
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return [record for _, record in ranked[:limit]]
+
 def _read_notebook(revision: str | None) -> tuple[str, str]:
     if revision:
         try:
@@ -65,7 +89,7 @@ def _pin_graph_module(revision: str | None) -> None:
 
 
 @lru_cache(maxsize=4)
-def _build_agent(notebook_text: str, label: str, graph_revision: str | None = None) -> dict[str, Any]:
+def _build_agent(notebook_text: str, label: str, graph_revision: str | None = None, memory_mode: str = "lexical") -> dict[str, Any]:
     """노트북의 LLM/Agent 셀만 실행합니다. 로컬 DB 셀과 Gradio UI는 실행하지 않습니다."""
     try:
         from dotenv import load_dotenv
@@ -104,7 +128,26 @@ def _build_agent(notebook_text: str, label: str, graph_revision: str | None = No
         # The legacy graph cell expects os from the earlier notebook config cell.
         "os": os,
     }
-    namespace["search_study_memory"] = lambda _question, limit=5: fixture["memory_records"][:limit]
+    semantic_index: dict[str, Any] = {"fingerprint": None, "searcher": None}
+
+    def fixture_memory_search(question: str, limit: int = 5, owner_id: str = "local"):
+        records = fixture["memory_records"]
+        if memory_mode == "semantic":
+            if not records:
+                return []
+            from backend.app.retrieval.embeddings import get_embedding_provider
+            from backend.app.retrieval.service import SemanticDocumentSearch
+
+            fingerprint = json.dumps(records, ensure_ascii=False, sort_keys=True)
+            if semantic_index["fingerprint"] != fingerprint:
+                semantic_index["searcher"] = SemanticDocumentSearch(
+                    records, get_embedding_provider(), owner_id=owner_id
+                )
+                semantic_index["fingerprint"] = fingerprint
+            return semantic_index["searcher"].search(question, limit=limit)
+        return lexical_fixture_search(question, records, limit)
+
+    namespace["search_study_memory"] = fixture_memory_search
     namespace["get_term_examples"] = lambda _term_key, limit=8: []
     namespace["get_saved_note"] = lambda _term_key: ""
     # Pydantic resolves forward references through sys.modules[cls.__module__].
@@ -125,8 +168,9 @@ def _run(
     label: str,
     case: dict[str, Any],
     graph_revision: str | None = None,
+    memory_mode: str = "lexical",
 ) -> dict[str, Any]:
-    namespace = _build_agent(notebook_text, label, graph_revision)
+    namespace = _build_agent(notebook_text, label, graph_revision, memory_mode)
     # agent_memory가 읽는 학습 기록은 개인 DB가 아니라 사례별 fixture에서만 가져옵니다.
     namespace["_eval_fixture"]["memory_records"] = case.get("memory_records", [])
 
@@ -157,6 +201,6 @@ def run_baseline(case: dict[str, Any], *, revision: str | None = "HEAD") -> dict
 
 def run_candidate(case: dict[str, Any], *, revision: str | None = None) -> dict[str, Any]:
     source, label = _read_notebook(None)
-    result = _run(source, f"candidate_{label}", case)
+    result = _run(source, f"candidate_{label}", case, memory_mode="semantic")
     result["validator"] = "현재 후보에 별도 Validator 메타데이터 없음"
     return result

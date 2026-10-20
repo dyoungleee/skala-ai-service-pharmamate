@@ -30,7 +30,7 @@
 
 | 영역 | 현행 구조 및 확인된 한계 | 구현 방안 | 목표 변화 | 검증 방법 |
 |---|---|---|---|---|
-| 개인 학습 검색 | SQLite `search_study_memory` 기반. 다른 표현의 유사 개념 검색 품질은 미검증 | 학습 메모·Q&A 임베딩, Vector DB 검색, SQLite 원문 연결 | “항체에 약물 붙이는 기술” 질문에서 기존 ADC 학습 기록 검색 | Recall@3, 검색 지연시간 |
+| 개인 학습 검색 | SQLite `search_study_memory` 기반. 다른 표현의 유사 개념 검색 품질은 미검증 | SQLite `memory_embeddings` 파생 인덱스에 임베딩 JSON 저장, cosine+단어 점수로 검색하고 원문 기록 ID 연결 | 표현이 달라도 기존 학습 기록 검색, 임베딩 장애 시 단어 검색으로 복구 | Recall@3, MRR, 검색 지연시간 |
 | 답변 검증 | 기사/기록/웹 출처 구분은 있으나 주장별 검증 노드 없음 | LangGraph Validator, 근거 불일치 탐지, 재생성 최대 1회 | 기사에 없는 임상 수치를 임의로 단정하지 않음 | 근거 일치율, 불근거 주장 비율, 지연/토큰 |
 | 실시간 응답 | Gradio 중심 응답 표시 | FastAPI SSE + Vue 스트림 소비 | 답변 생성 중 텍스트/진행 상태 점진 표시 | 첫 응답시간(TTFT), 오류 복구 |
 | 코드 구조 | Notebook 중심 구현 | 기사·Agent·RAG·DB·API 계층 모듈화 | 기능별 테스트 및 서버 독립 실행 | 단위/통합 테스트 |
@@ -47,9 +47,9 @@
 ### 3.1 Personalized RAG
 
 - **데이터:** SQLite의 용어, 학습 메모, 관련 Q&A 및 기사 맥락.
-- **인덱싱:** 기록 ID, 사용자/세션 소유자, 용어, 기사 ID, 수정 시각을 메타데이터로 저장. 변경 시 재임베딩.
-- **검색:** 질문 임베딩 → top-k 후보 → 소유권/출처 필터 → 관련 문맥 생성 → Agent 답변.
-- **정합성:** SQLite를 원본 저장소(source of truth)로 유지. Vector DB는 재구축 가능한 파생 인덱스.
+- **인덱싱:** SQLite `memory_embeddings`에 청크·원본 기록 ID·콘텐츠 해시·임베딩 모델·임베딩 JSON을 저장한다. 원본 SQLite 기록을 기준으로 인덱스를 재구축할 수 있고, 변경된 청크만 다시 임베딩한다.
+- **검색:** 질문 임베딩 → cosine 유사도와 단어 일치 혼합 점수 → top-k 후보 → 원본 기록 ID와 출처 메타데이터를 Agent에 전달한다. 임베딩 API 실패 시 기존 SQLite 단어 검색으로 대체한다.
+- **정합성:** SQLite를 원본 저장소(source of truth)와 파생 벡터 인덱스 저장소로 함께 사용한다. 현재 단일 사용자 `local` 범위만 허용하고 세션별 소유권은 F7에서 연결한다. 선택 근거는 ADR-002에 기록한다.
 - **완료 기준:** 표현이 다른 유사 질문으로 과거 기록 검색, 인용된 원본 기록 조회, 타 사용자 기록 누출 방지.
 
 ### 3.2 Answer Validator
@@ -173,8 +173,8 @@ flowchart TD
     GRAPH --> ART[Article Context]
     GRAPH --> MEM[Personalized RAG]
     GRAPH --> WEB[Web Search / Tavily]
-    MEM --> VDB[(Vector DB)]
-    MEM --> SQL[(SQLite)]
+    MEM --> VIDX[(SQLite vector index)]
+    MEM --> SQL[(SQLite source of truth)]
     ART --> ANSWER[Answer Generator]
     MEM --> ANSWER
     WEB --> ANSWER

@@ -67,6 +67,21 @@ def initialize_database():
             created_at TEXT NOT NULL,
             PRIMARY KEY(term_key, article_id)
         );
+        CREATE TABLE IF NOT EXISTS memory_embeddings (
+            chunk_id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            term_key TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            embedding_model TEXT NOT NULL,
+            embedding_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_embeddings_owner
+            ON memory_embeddings(owner_id);
         """)
 
 def now_local():
@@ -181,6 +196,105 @@ def get_term_examples(term_key, limit=8):
     with connect_db() as conn:
         return [dict(x) for x in conn.execute(
             "SELECT * FROM term_examples WHERE term_key=? ORDER BY created_at DESC LIMIT ?", (term_key,limit))]
+
+def get_memory_documents(owner_id: str = "local") -> list[dict]:
+    """Return source-of-truth learning records for the current local owner scope.
+
+    The current app is single-user. Unknown scopes return no records until the
+    session/ownership migration adds owner columns to source tables.
+    """
+    if owner_id != "local":
+        return []
+    documents: list[dict] = []
+    with connect_db() as conn:
+        terms = [dict(row) for row in conn.execute(
+            "SELECT * FROM learned_terms ORDER BY term_name")]
+        for term in terms:
+            aliases = json.loads(term.get("aliases_json") or "[]")
+            title = f"학습 용어: {term['term_name']}"
+            content = (
+                f"용어: {term['term_name']}\n분류: {term['category']}\n"
+                f"정의: {term['simple_definition']}\n별칭: {', '.join(aliases)}"
+            )
+            documents.append({
+                "owner_id": owner_id, "source_type": "term",
+                "source_id": term["term_key"], "record_id": f"term:{term['term_key']}",
+                "term_key": term["term_key"], "title": title, "content": content,
+                "source_url": "",
+            })
+        for row in conn.execute("""SELECT n.term_key,n.note,t.term_name
+            FROM term_notes n JOIN learned_terms t USING(term_key)
+            ORDER BY n.updated_at DESC"""):
+            documents.append({
+                "owner_id": owner_id, "source_type": "note",
+                "source_id": row["term_key"], "record_id": f"note:{row['term_key']}",
+                "term_key": row["term_key"], "title": f"학습 메모: {row['term_name']}",
+                "content": str(row["note"] or ""), "source_url": "",
+            })
+        for row in conn.execute("""SELECT q.qa_id,q.term_key,q.article_id,q.question,q.answer,
+            t.term_name FROM term_qa q JOIN learned_terms t USING(term_key)
+            ORDER BY q.created_at DESC"""):
+            documents.append({
+                "owner_id": owner_id, "source_type": "qa",
+                "source_id": row["qa_id"], "record_id": f"qa:{row['qa_id']}",
+                "term_key": row["term_key"], "title": f"학습 Q&A: {row['term_name']}",
+                "content": f"질문: {row['question']}\n답변: {row['answer']}",
+                "source_url": "",
+            })
+        for row in conn.execute("""SELECT e.term_key,e.article_id,e.context,e.source_url,
+            t.term_name,a.title AS article_title FROM term_examples e
+            JOIN learned_terms t USING(term_key)
+            LEFT JOIN read_articles a USING(article_id)
+            ORDER BY e.created_at DESC"""):
+            source_id = f"{row['term_key']}:{row['article_id']}"
+            documents.append({
+                "owner_id": owner_id, "source_type": "article_context",
+                "source_id": source_id, "record_id": f"article_context:{source_id}",
+                "term_key": row["term_key"],
+                "title": f"기사 맥락: {row['article_title'] or row['term_name']}",
+                "content": str(row["context"] or ""),
+                "source_url": str(row["source_url"] or ""),
+            })
+        for row in conn.execute("""SELECT article_id,title,source_url,article_type,
+            summary,key_issue,entities_json FROM read_articles ORDER BY read_at DESC"""):
+            entities = json.loads(row["entities_json"] or "[]")
+            content = (
+                f"기사 제목: {row['title']}\n유형: {row['article_type']}\n"
+                f"요약: {row['summary']}\n핵심 이슈: {row['key_issue']}\n"
+                f"주요 대상: {', '.join(entities)}"
+            )
+            documents.append({
+                "owner_id": owner_id, "source_type": "article",
+                "source_id": row["article_id"], "record_id": f"article:{row['article_id']}",
+                "term_key": "", "title": f"읽은 기사: {row['title']}",
+                "content": content, "source_url": str(row["source_url"] or ""),
+            })
+    return [document for document in documents if document["content"].strip()]
+
+
+def get_memory_embedding_rows(owner_id: str = "local") -> list[dict]:
+    with connect_db() as conn:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM memory_embeddings WHERE owner_id=?", (owner_id,))]
+
+
+def replace_memory_embeddings(owner_id: str, rows: list[dict], active_chunk_ids: list[str]) -> None:
+    """Atomically replace changed vectors and remove stale chunks for one owner."""
+    with connect_db() as conn:
+        if active_chunk_ids:
+            placeholders = ",".join("?" for _ in active_chunk_ids)
+            conn.execute(
+                f"DELETE FROM memory_embeddings WHERE owner_id=? AND chunk_id NOT IN ({placeholders})",
+                [owner_id, *active_chunk_ids],
+            )
+        else:
+            conn.execute("DELETE FROM memory_embeddings WHERE owner_id=?", (owner_id,))
+        conn.executemany("""INSERT OR REPLACE INTO memory_embeddings
+            (chunk_id,owner_id,source_type,source_id,term_key,title,content,content_hash,
+             embedding_model,embedding_json,updated_at)
+            VALUES (:chunk_id,:owner_id,:source_type,:source_id,:term_key,:title,:content,
+                    :content_hash,:embedding_model,:embedding_json,:updated_at)""", rows)
+
 
 def search_study_memory(question: str, limit=5):
     question_low = (question or '').casefold()

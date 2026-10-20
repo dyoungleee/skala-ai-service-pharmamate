@@ -1,0 +1,20 @@
+{"case_id": "Q01", "query": "항체에 약을 붙여 암세포에 보내는 치료 이름", "expected_term_keys": ["adc"]}
+{"case_id": "Q02", "query": "표적 세포로 세포독성 payload를 운반하는 바이오의약품", "expected_term_keys": ["adc"]}
+{"case_id": "Q03", "query": "ADC에서 암 표적을 찾아가는 부분은 무엇인가", "expected_term_keys": ["adc"]}
+{"case_id": "Q04", "query": "항암 약물이 종양 세포에 선택적으로 도달하도록 돕는 방식", "expected_term_keys": ["adc"]}
+{"case_id": "Q05", "query": "환자 T세포를 꺼내 유전자 조작 후 다시 넣는 치료", "expected_term_keys": ["cart"]}
+{"case_id": "Q06", "query": "면역세포를 재설계해서 암을 공격하게 하는 개인 맞춤 치료", "expected_term_keys": ["cart"]}
+{"case_id": "Q07", "query": "세포에 항원 설계도를 보내 면역 반응을 유도하는 백신", "expected_term_keys": ["mrna"]}
+{"case_id": "Q08", "query": "메신저 RNA로 세포가 단백질을 만들게 하는 예방접종", "expected_term_keys": ["mrna"]}
+{"case_id": "Q09", "query": "안내 RNA가 DNA 위치를 찾고 효소가 잘라내는 유전자 기술", "expected_term_keys": ["crispr"]}
+{"case_id": "Q10", "query": "유전체의 특정 염기서열을 정밀하게 편집하는 도구", "expected_term_keys": ["crispr"]}
+{"case_id": "Q11", "query": "약이 흡수되고 몸에 어떤 영향을 주는지 함께 보는 개념", "expected_term_keys": ["pkpd"]}
+{"case_id": "Q12", "query": "몸이 약물을 처리하는 과정과 약효를 연결해 설명해줘", "expected_term_keys": ["pkpd"]}
+{"case_id": "Q13", "query": "사람에게 처음 후보물질을 투여해 안전성을 살피는 단계", "expected_term_keys": ["phase1"]}
+{"case_id": "Q14", "query": "내약성과 용량을 먼저 확인하는 신약 임상시험 단계", "expected_term_keys": ["phase1"]}
+{"case_id": "Q15", "query": "T세포의 면역 브레이크를 막아 암 공격을 돕는 표적", "expected_term_keys": ["pd1"]}
+{"case_id": "Q16", "query": "암의 면역 회피 신호와 관련된 PD-1 수용체", "expected_term_keys": ["pd1"]}
+{"case_id": "Q17", "query": "기존 바이오의약품과 매우 비슷하지만 완전히 같지는 않은 제품", "expected_term_keys": ["biosimilar"]}
+{"case_id": "Q18", "query": "기준 생물학적 제제와 임상적으로 의미 있는 차이가 없는 약", "expected_term_keys": ["biosimilar"]}
+{"case_id": "Q19", "query": "하나의 항원을 선택적으로 붙잡는 동일한 항체 분자들", "expected_term_keys": ["mab"]}
+{"case_id": "Q20", "query": "임상에서 효과를 판정할 때 사전에 정해 두는 측정 기준", "expected_term_keys": ["endpoint"]}
