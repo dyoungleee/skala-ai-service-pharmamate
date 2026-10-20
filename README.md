@@ -220,6 +220,10 @@ Vue 화면은 기사 입력·분석, 핵심 용어 선택, SSE 채팅, 출처·�
 
 MCP 호스트가 위 명령을 stdio 서버로 실행합니다. 모듈은 API와 같은 `PHARMAMATE_DATA_DIR` 또는 `.env` 값을 읽고, 기본값은 `pharmamate_data/`입니다. 합성 SQLite로 측정한 직접 호출/MCP stdio p50은 `0.317 ms / 1.010 ms`; 30회 호출이 모두 성공하고 결과가 일치했습니다. 상세 조건과 보안 범위는 [F8.3 실험 보고서](docs/experiments/F8_3_mcp_server.md)와 [ADR-007](docs/adr/ADR-007-mcp-server.md)에 있습니다.
 
+## F8.4 복합 검색 병렬 실행
+
+`memory_web` 경로에서 개인 학습 기록과 Tavily 검색을 병렬로 실행하고, 둘 다 완료된 뒤 기존 답변·검증 경로로 합칩니다. Tavily 미설정 시 빠른 실패 응답 경로는 기존 순차 fallback을 사용합니다. 각 source에 고정 80 ms를 둔 합성 30회 실험에서 p50은 `166.60 ms → 84.60 ms`(49.2% 감소), 두 결과 모두 성공 및 내용 일치를 확인했습니다. 이는 외부 API의 실제 지연 비교가 아닙니다. [F8.4 실험 보고서](docs/experiments/F8_4_parallel_sources.md)와 [ADR-008](docs/adr/ADR-008-parallel-source-retrieval.md)에 범위와 한계를 적었습니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.

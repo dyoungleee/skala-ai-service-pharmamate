@@ -5,6 +5,7 @@ LLM, 외부 검색 클라이언트, 학습 기록 조회 함수는 호출자가 
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Literal, TypedDict, Any
 
 from langchain_core.output_parsers import StrOutputParser
@@ -54,6 +55,9 @@ class AgentState(TypedDict, total=False):
     validation_status: str
     validation_feedback: str
     unsupported_claims: list[str]
+
+
+_SOURCE_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pharmamate-source")
 
 
 def build_agent_graph(
@@ -234,6 +238,15 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
                 "sources": [],
             }
 
+    def agent_parallel_sources(state: AgentState) -> dict[str, Any]:
+        # Without an external search client, web lookup is an immediate fallback;
+        # avoid paying thread scheduling overhead for that path.
+        if not search_client:
+            return {**agent_memory(state), **agent_web(state)}
+        memory_future = _SOURCE_EXECUTOR.submit(agent_memory, state)
+        web_future = _SOURCE_EXECUTOR.submit(agent_web, state)
+        return {**memory_future.result(), **web_future.result()}
+
     def agent_answer(state: AgentState) -> dict[str, Any]:
         attempts = int(state.get("answer_attempts", 0)) + 1
         payload = {
@@ -331,22 +344,21 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
     def choose_route(state: AgentState) -> str:
         return state.get("route", "article")
 
-    def after_memory(state: AgentState) -> str:
-        return "web" if state.get("route") == "memory_web" else "answer"
-
     builder = StateGraph(AgentState)
     builder.add_node("router", agent_router)
     builder.add_node("memory", agent_memory)
     builder.add_node("web", agent_web)
+    builder.add_node("memory_web", agent_parallel_sources)
     builder.add_node("answer", agent_answer)
     builder.add_node("validator", agent_validate)
     builder.add_node("insufficient", agent_insufficient)
     builder.add_edge(START, "router")
     builder.add_conditional_edges("router", choose_route, {
-        "article": "answer", "memory": "memory", "web": "web", "memory_web": "memory",
+        "article": "answer", "memory": "memory", "web": "web", "memory_web": "memory_web",
     })
-    builder.add_conditional_edges("memory", after_memory, {"answer": "answer", "web": "web"})
+    builder.add_edge("memory", "answer")
     builder.add_edge("web", "answer")
+    builder.add_edge("memory_web", "answer")
     builder.add_edge("answer", "validator")
     builder.add_conditional_edges("validator", after_validation, {
         "end": END, "answer": "answer", "fallback": "insufficient",

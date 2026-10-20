@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import threading
+import time
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableLambda
@@ -11,8 +13,9 @@ from backend.app.services.recommendations import LearningTurnResponse, fallback_
 
 
 class FakeModel(Runnable):
-    def __init__(self, answers: list[str]):
+    def __init__(self, answers: list[str], route: str = "article"):
         self.answers = list(answers)
+        self.route = route
 
     def invoke(self, input, config=None, **kwargs):
         answer = self.answers.pop(0) if self.answers else "초안 답변"
@@ -22,7 +25,8 @@ class FakeModel(Runnable):
         def output(_prompt):
             if schema is RouteDecision:
                 return RouteDecision(
-                    route="article", memory_query="", search_query="", reason="fixture", related_to_selected=False
+                    route=self.route, memory_query="ADC", search_query="latest ADC results",
+                    reason="fixture", related_to_selected=False
                 )
             if schema is AnswerValidation:
                 return AnswerValidation(status="pass")
@@ -33,10 +37,11 @@ class FakeModel(Runnable):
         return RunnableLambda(output)
 
 
-def build_graph(answers: list[str], answer_validator=None):
+def build_graph(answers: list[str], answer_validator=None, *, route="article", search_client=None, search_study_memory=None):
     return build_agent_graph(
-        model=FakeModel(answers),
-        search_study_memory=lambda *_args, **_kwargs: [],
+        model=FakeModel(answers, route=route),
+        search_client=search_client,
+        search_study_memory=search_study_memory or (lambda *_args, **_kwargs: []),
         get_term_examples=lambda *_args, **_kwargs: [],
         get_saved_note=lambda *_args, **_kwargs: "",
         answer_validator=answer_validator or RunnableLambda(lambda _payload: AnswerValidation(status="pass")),
@@ -81,6 +86,39 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertNotIn("87%", result["answer"])
         self.assertIn("단정하지 않겠습니다", result["answer"])
         self.assertEqual(result["recommendations"], [])
+
+    def test_memory_web_sources_run_concurrently_and_both_reach_answer(self):
+        rendezvous = threading.Barrier(2, timeout=2)
+
+        def search_memory(*_args, **_kwargs):
+            rendezvous.wait()
+            return [{
+                "record_id": "session_note:adc", "source_type": "session_note",
+                "title": "내 ADC 학습 메모", "content": "합성 메모: ADC는 표적 전달 기술입니다.",
+            }]
+
+        class FakeSearchClient:
+            def search(self, **_kwargs):
+                rendezvous.wait()
+                return {"results": [{
+                    "title": "가상 최신 ADC 시험", "url": "https://example.invalid/adc",
+                    "content": "합성 fixture: 최신 시험은 진행 중입니다.",
+                }]}
+
+        graph = build_graph(
+            ["기록과 검색 자료를 함께 설명합니다."],
+            route="memory_web",
+            search_client=FakeSearchClient(),
+            search_study_memory=search_memory,
+        )
+        started = time.perf_counter()
+        result = graph.invoke({"question": "이전 ADC 기록과 최신 결과를 비교해줘."})
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 1.5)
+        self.assertIn("합성 메모", result["memory"])
+        self.assertIn("가상 최신 ADC 시험", result["web"])
+        self.assertEqual(len(result["sources"]), 2)
 
 
 if __name__ == "__main__":
