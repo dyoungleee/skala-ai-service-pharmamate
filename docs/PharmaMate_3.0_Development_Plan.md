@@ -256,7 +256,7 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 
 **시간이 부족할 때:** F0~F3의 실제 작동과 F4의 재현 가능한 증거를 우선한다. 새 모델로의 교체, 새 프런트엔드, 다수의 선택 기술을 한꺼번에 도입하지 않는다. Day3 17시 30분 발표 전에는 시연 흐름과 PPT를 확인한다.
 
-**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`, F7.1 `d620925`, F7.2 `cdf7b5c`, F8.1 `324b067`. F8.2 Dynamic Planning은 추가 호출 비용이 품질 개선으로 이어지지 않아 보류한다. F8.3 MCP Server는 `8bf3673`, F8.4 병렬 source 실행은 `ff5e9f6`, F8.5 Ollama 호환성 평가·최종 PPT는 `e521866`에서 각각 구현·푸시했다. Ollama는 구조화 출력 호환성을 확인했지만 지연·라우팅 정확도 결과에 따라 도입을 보류한다. F8.1~F8.5의 조건·결과·한계는 `docs/experiments/`에 기능별로 기록한다. 종합 발표 자료는 [F8 결과 PPT](../outputs/PharmaMate_3.0_Implementation_Results_F8.pptx), F4 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)에 남긴다.
+**완료·푸시 기록:** F0 `904797c`, F1.1 `dd0bc50`, F1.2 `c7469ff`, F2 `be9a865`, F3 `e58790e` 및 Validator 개선 `3114e86`, F4 `dc9acd8`, F5 `65d3089`, F6.1 `15fd0f6`, F6.2 `b72299d`, F6.3 `444cb7e`, F6.4 SSE 오류 복구·브라우저 E2E `895ab54`, F7.1 `d620925` 및 프로세스 재시작 복원 검증 `c41c67a`, F7.2 `cdf7b5c`, F8.1 `324b067`. F8.2 Dynamic Planning은 추가 호출 비용이 품질 개선으로 이어지지 않아 보류한다. F8.3 MCP Server는 `8bf3673`, F8.4 병렬 source 실행은 `ff5e9f6`, F8.5 Ollama 호환성 평가·최종 PPT는 `e521866`에서 각각 구현·푸시했다. Ollama는 구조화 출력 호환성을 확인했지만 지연·라우팅 정확도 결과에 따라 도입을 보류한다. F8.1~F8.5의 조건·결과·한계는 `docs/experiments/`에 기능별로 기록한다. 종합 발표 자료는 [F8 결과 PPT](../outputs/PharmaMate_3.0_Implementation_Results_F8.pptx), F4 비교는 [F4 보고서](experiments/F4_overall_evaluation.md)에 남긴다.
 
 ### 10.2 3.0 후속 범위
 
