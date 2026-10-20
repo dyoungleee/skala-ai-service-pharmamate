@@ -18,7 +18,7 @@
 | 기사 입력·분석 | URL을 불러오거나 본문을 직접 붙여넣습니다. 기사 유형, 한 줄 요약, 업계 이슈, 주요 기업·기술과 핵심 용어를 정리합니다. |
 | 원문 읽기 | 기사 원문을 표시하고 핵심 용어를 강조합니다. 새 용어와 이전에 학습한 용어를 색으로 구분합니다. |
 | 용어 미리보기 | 기사 읽기 전에 핵심 용어를 최대 5개까지 살펴봅니다. 화면의 버튼으로 Agent 질문 탭에 바로 이동할 수 있습니다. |
-| Agent 질문 | 용어의 쉬운 설명, 추천 질문 3개, 자유 질문을 제공합니다. 선택 용어와 관계없는 질문도 할 수 있습니다. |
+| Agent 질문 | 용어의 쉬운 설명, 자유 질문, 답변 뒤 학습 목적별 후속 질문 3개를 제공합니다. 선택 용어와 관계없는 질문도 할 수 있습니다. |
 | 학습 기록 | 사용자가 검토·수정한 메모와 선택 용어에 관련된 Q&A를 저장하고 다시 확인합니다. |
 | 읽은 기사 | 읽기 완료를 누르면 기사와 산업 이슈를 저장합니다. URL 또는 정규화한 제목이 기존 기록과 일치하면 중복 저장을 건너뜁니다. |
 | 제목 수정 | 분석 후 기사 제목을 화면에서 수정할 수 있습니다. |
@@ -126,6 +126,19 @@ LangGraph 구성은 `backend/app/agents/graph.py`, 환경 설정은 `backend/app
     python eval/compare_answers.py --all --baseline-ref 9814fc2
 
 사례별 Before/After 답변, 라우트, Validator 결과, 응답 시간은 로컬 `eval/results/latest.jsonl`에 기록됩니다. 집계와 한계는 [F4 종합 평가 보고서](docs/experiments/F4_overall_evaluation.md), 발표 자료는 [PharmaMate 3.0 결과 요약](outputs/PharmaMate_3.0_Implementation_Results.pptx)에서 확인할 수 있습니다. 검색·Validator 상세 조건은 `docs/experiments/`에 기능별로 정리했습니다.
+
+## F5 맥락 기반 후속 질문
+
+Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니다. `원리 심화`, `다른 개념과 연결`, `한계·응용 탐구` 범주마다 학습 목표를 표시하고, 버튼을 누르면 질문 입력창에 넣습니다. 최근 대화와 현재 선택 용어의 저장 메모·Q&A를 문맥으로 사용합니다. 답변 검증이 실패하거나 모델 구조화 출력에 문제가 있으면 기본 질문을 제공하고, 이전 질문과 중복되는 추천은 제외합니다.
+
+합성 Q&A 4건의 실험에서 답변과 추천을 한 번에 생성한 방식은 두 번 나눠 생성하는 방식보다 p50 지연이 `4.38초 → 2.64초`, 토큰이 `4,903 → 3,073`, 집계 비용이 `$0.001373 → $0.000995`였습니다. 질문 4건을 한 번씩 실행한 작은 표본입니다. 실제 화면 비교와 조건은 [F5 실험 보고서](docs/experiments/F5_dynamic_followup_questions.md)에 있습니다. 재현 명령은 각각 LLM 호출과 API 비용이 발생합니다.
+
+    python eval/run_recommendation_experiment.py
+    python eval/run_recommendation_strategy_experiment.py
+
+같은 질문에 대한 답변, 출처, Validator와 후속 질문을 터미널에서 나란히 보려면 승인된 기준선 커밋을 지정합니다.
+
+    python eval/compare_answers.py --all --baseline-ref dc9acd8
 
 ## 제한 사항과 향후 개선
 

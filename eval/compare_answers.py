@@ -77,6 +77,15 @@ def render_result(label: str, result: dict[str, Any]) -> None:
         print("- 없음")
     print("답변:")
     print(result.get("answer") or "(답변 없음)")
+    recommendations = result.get("recommendations") or []
+    if recommendations:
+        print("추천 후속 질문:")
+        for item in recommendations:
+            if isinstance(item, dict):
+                category = item.get("category", "학습")
+                goal = item.get("learning_goal", "")
+                question = item.get("question", "")
+                print(f"- [{category}] {question}{f' — 학습 목표: {goal}' if goal else ''}")
 
 
 def run_demo(case: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:

@@ -185,6 +185,7 @@ def _run(
     elapsed = time.perf_counter() - started
     return {
         "answer": result.get("answer", ""),
+        "recommendations": result.get("recommendations", []),
         "sources": result.get("sources", []),
         "route": result.get("route", ""),
         "validator": "미적용(2.2 기준선)" if "validation_status" not in result else result.get("validation_status", "미제공"),

@@ -7,6 +7,7 @@ from langchain_core.runnables import Runnable, RunnableLambda
 
 from backend.app.agents.graph import RouteDecision, build_agent_graph
 from backend.app.agents.validator import AnswerValidation
+from backend.app.services.recommendations import LearningTurnResponse, fallback_recommendations
 
 
 class FakeModel(Runnable):
@@ -25,6 +26,9 @@ class FakeModel(Runnable):
                 )
             if schema is AnswerValidation:
                 return AnswerValidation(status="pass")
+            if schema is LearningTurnResponse:
+                answer = self.answers.pop(0) if self.answers else "초안 답변"
+                return LearningTurnResponse(answer=answer, recommendations=fallback_recommendations("ADC"))
             raise AssertionError(f"unexpected schema: {schema}")
         return RunnableLambda(output)
 
@@ -53,6 +57,7 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertEqual(result["validation_retries"], 1)
         self.assertEqual(result["validation_status"], "pass")
         self.assertNotIn("87%", result["answer"])
+        self.assertEqual(len(result["recommendations"]), 3)
 
     def test_validator_error_returns_safe_message_without_retry_loop(self):
         def fail(_payload):
@@ -75,6 +80,7 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertEqual(result["validation_status"], "insufficient_evidence")
         self.assertNotIn("87%", result["answer"])
         self.assertIn("단정하지 않겠습니다", result["answer"])
+        self.assertEqual(result["recommendations"], [])
 
 
 if __name__ == "__main__":
