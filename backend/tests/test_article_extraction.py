@@ -39,6 +39,33 @@ class ArticleExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "기사 본문 영역을 찾지 못했습니다"):
             extract_article_text(BeautifulSoup(html, "html.parser"))
 
+    def test_trims_plain_text_tags_reporter_and_recommendation_tail(self):
+        article_body = "개발 단계 준비와 후보물질의 임상 연구 확대를 이어갈 것이라고 밝혔다. " * 12
+        html = f"""
+        <html><body>
+          <div id="articleBody">
+            <p>{article_body}</p>
+            <p>관련태그</p>
+            <p>#에이비엘바이오</p><p>#ESMO 2026</p><p>#이중항체</p>
+            <p>뉴스웨이</p><p>임주희 기자</p><p>ljh@newsway.co.kr</p>
+            <p>+</p><p>기자채널</p><p>다른기사</p>
+            <p>남태훈 국제약품 대표 "흔들림 없는 실행으로 100년 기업 만들자"</p>
+            <p>저작권자 © 온라인 경제미디어 뉴스웨이 · 무단 전재 및 재배포 금지</p>
+          </div>
+        </body></html>
+        """
+
+        article, method = extract_article_text(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(method, "article_selector")
+        self.assertIn("임상 연구 확대", article)
+        self.assertNotIn("관련태그", article)
+        self.assertNotIn("#ESMO", article)
+        self.assertNotIn("ljh@newsway.co.kr", article)
+        self.assertNotIn("기자채널", article)
+        self.assertNotIn("흔들림 없는 실행", article)
+        self.assertNotIn("무단 전재", article)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -48,6 +48,32 @@ ARTICLE_NOISE_SELECTORS = [
     '[aria-label*="관련 기사"]'
 ]
 
+# Some publishers place the tag, reporter, and recommendation blocks as plain
+# text inside the article body container. Those blocks cannot be removed with
+# DOM selectors, so trim them by their standalone heading labels as well.
+ARTICLE_TAIL_HEADINGS = {
+    "관련태그",
+    "태그",
+    "기자채널",
+    "다른기사",
+    "추천기사",
+}
+ARTICLE_TAIL_PATTERNS = [
+    re.compile(r"저작권자|무단\s*전재|재배포\s*금지"),
+    re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b"),
+]
+
+
+def _trim_article_tail(lines: list[str]) -> list[str]:
+    """Remove publisher metadata appended after the article's final paragraph."""
+    for index, line in enumerate(lines):
+        heading = re.sub(r"[\s:：#]+", "", line).lower()
+        if heading in ARTICLE_TAIL_HEADINGS:
+            return lines[:index]
+        if any(pattern.search(line) for pattern in ARTICLE_TAIL_PATTERNS):
+            return lines[:index]
+    return lines
+
 def _clean_article_node(node) -> str:
     fragment=BeautifulSoup(str(node),'html.parser')
     for selector in ARTICLE_NOISE_SELECTORS:
@@ -58,6 +84,7 @@ def _clean_article_node(node) -> str:
         line=re.sub(r'\s+',' ',line).strip()
         if line and (not lines or line != lines[-1]):
             lines.append(line)
+    lines = _trim_article_tail(lines)
     return '\n'.join(lines)
 
 def _jsonld_article_body(value):
