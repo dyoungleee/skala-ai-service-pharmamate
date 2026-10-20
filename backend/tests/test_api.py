@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 import unittest
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -216,6 +221,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(snapshot["article"]["article_id"], analyzed["article_id"])
         self.assertEqual(len(snapshot["turns"]), 1)
         self.assertEqual(snapshot["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
+
+        # A fresh Python process must restore the snapshot from the same SQLite file.
+        script = """
+import json, os, sys
+from fastapi.testclient import TestClient
+from backend.app.db import repository
+from backend.app.main import app, runtime_dependency
+repository.configure_database(sys.argv[1])
+token = os.environ['PHARMAMATE_TEST_SESSION_TOKEN']
+app.dependency_overrides[runtime_dependency] = lambda: object()
+response = TestClient(app).get(
+    f\"/api/sessions/{sys.argv[2]}\",
+    headers={\"Authorization\": f\"Bearer {token}\"},
+)
+response.raise_for_status()
+print(json.dumps(response.json(), ensure_ascii=False))
+"""
+        process_env = {**os.environ, "PHARMAMATE_TEST_SESSION_TOKEN": token}
+        reopened = subprocess.run(
+            [sys.executable, "-c", script, self.temp_dir.name, session_id],
+            cwd=Path(__file__).resolve().parents[2],
+            env=process_env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(reopened.returncode, 0, reopened.stderr)
+        snapshot_after_restart = json.loads(reopened.stdout)
+        self.assertEqual(snapshot_after_restart["article"]["article_id"], analyzed["article_id"])
+        self.assertEqual(snapshot_after_restart["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
 
         second = self.client.post("/api/sessions").json()
         other = self.client.get(

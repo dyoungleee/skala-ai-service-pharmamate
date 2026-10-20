@@ -17,12 +17,13 @@
 
 | 검증 | 결과 |
 |---|---|
-| `PYTHONDONTWRITEBYTECODE=1 ./pharma/bin/python -m unittest discover -s backend/tests -v` | 30개 테스트 통과 |
+| `PYTHONDONTWRITEBYTECODE=1 ./pharma/bin/python -m unittest discover -s backend/tests -v` | 최종 통합 기준 37개 테스트 통과 |
 | API 격리 테스트 | 토큰 없음/오류는 404, 유효 토큰은 기사·대화 복원 |
+| 새 Python 프로세스 복원 | 별도 프로세스에서 같은 임시 SQLite 파일을 다시 열고 토큰 인증 후 기사·대화 스냅샷 복원 |
 | RAG 격리 테스트 | 저장한 기록은 작성 세션에서 검색되고 다른 세션에서는 0건 |
 | `npm run build --prefix frontend` | Vue 세션 선택·복원 화면 production build 통과 |
 
-테스트는 임시 SQLite 파일과 가짜 Agent/임베딩을 사용해 기존 사용자 DB 및 외부 LLM API에 접근하지 않는다. Vue compile 확인은 완료했으며 실제 브라우저 수동 검수는 수행하지 않았다.
+최종 통합 테스트 기준 37개 테스트가 통과했다. 테스트는 임시 SQLite 파일과 가짜 Agent/임베딩을 사용해 기존 사용자 DB 및 외부 LLM API에 접근하지 않는다. 별도 Python 프로세스 테스트는 FastAPI runtime 의존성만 대체하고, 세션 인증·SQLite 조회 경로는 실제 코드로 실행한다. 브라우저 재접속 흐름은 [F6.4 브라우저 E2E 보고서](F6_4_browser_e2e.md)에서 합성 API로 추가 검증했다.
 
 ## 한계 및 범위
 
