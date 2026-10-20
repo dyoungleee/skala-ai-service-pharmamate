@@ -1,0 +1,16 @@
+# Gradio UI and notebook runtime
+gradio>=5,<7
+ipykernel>=6
+
+# LLM and Agent workflow
+langchain-openai>=0.3,<2
+langchain-core>=0.3,<2
+langgraph>=0.3,<2
+langchain-community>=0.3,<2
+tavily-python>=0.5,<1
+pydantic>=2,<3
+
+# URL article extraction and environment configuration
+requests>=2.31
+beautifulsoup4>=4.12
+python-dotenv>=1.0
