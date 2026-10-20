@@ -312,9 +312,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         ).json()
         self.assertEqual(records[0]["qa_count"], 1)
         self.assertCountEqual(records[0]["aliases"], [term["term"], *term["aliases"]])
-        self.assertIn("### AI Tutor 대화에서 정리한 내용", records[0]["note"])
-        self.assertIn("### 추가 메모", records[0]["note"])
-        self.assertIn("안전성과 내약성을 우선 살핍니다.", records[0]["note"])
+        self.assertEqual(records[0]["note"], "안전성과 내약성을 우선 살핍니다.")
 
         first_memory = search_study_memory(
             "임상 1상 안전성", owner_id=first["session_id"], embedding_provider=FixedEmbeddings()
@@ -355,16 +353,17 @@ print(json.dumps(response.json(), ensure_ascii=False))
             json={"term": term},
         )
         self.assertEqual(saved.status_code, 200)
-        self.assertIn("메모 자동 저장", saved.json()["message"])
+        self.assertIn("메모 저장 완료", saved.json()["message"])
         records = self.client.get(
             f"/api/sessions/{session_id}/study-records", headers=headers
         ).json()
         note = records[0]["note"]
-        self.assertIn("## 임상 1상", note)
-        self.assertIn("- 분류: Clinical Trial", note)
-        self.assertIn("### AI Tutor 대화에서 정리한 내용", note)
-        self.assertIn(f"**Q.** {question}", note)
-        self.assertIn("**A.** 검증된 답변을 조각으로 전달합니다.", note)
+        self.assertIn("한 줄 개념\n", note)
+        self.assertIn("헷갈렸던 부분 Q&A", note)
+        self.assertIn(f"Q. {question}", note)
+        self.assertIn("A. 검증된 답변을 조각으로 전달합니다.", note)
+        self.assertIn("기사에서 중요한 이유", note)
+        self.assertIn("기억할 점", note)
 
         # Older blank notes are backfilled from their saved Q&A when opened.
         with repository.connect_db() as conn:
@@ -397,11 +396,11 @@ print(json.dumps(response.json(), ensure_ascii=False))
         record = self.client.get(
             f"/api/sessions/{session_id}/study-records", headers=headers
         ).json()[0]
-        self.assertIn("## 임상 1상", record["note"])
-        self.assertIn("- 분류: Clinical Trial", record["note"])
-        self.assertIn("사람 대상 초기 평가 단계입니다.", record["note"])
-        self.assertIn("후보물질의 안전성을 살핍니다.", record["note"])
-        self.assertNotIn("### AI Tutor 대화에서 정리한 내용", record["note"])
+        self.assertIn("한 줄 개념\n사람 대상 초기 평가 단계입니다.", record["note"])
+        self.assertIn("헷갈렸던 부분 Q&A", record["note"])
+        self.assertIn("아직 이 용어에 연결된 질문과 답변이 없습니다.", record["note"])
+        self.assertIn("기사에서 중요한 이유\n후보물질의 안전성을 살핍니다.", record["note"])
+        self.assertIn("기억할 점\n개발 단계 이해", record["note"])
         self.assertEqual(record["qa_count"], 0)
 
     def test_read_articles_dedupe_copies_and_group_issues_conservatively(self):

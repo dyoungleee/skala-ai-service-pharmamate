@@ -295,21 +295,33 @@ def get_session_turns(
 
 
 def _draft_session_study_note(term: dict, conversations: list[dict]) -> str:
-    """Create a stable learning note from a term card and its linked tutor turns."""
+    """Create the default four-part learning memo from a term and its tutor turns."""
+    concept = str(term.get("simple_definition") or "정의가 저장되지 않았습니다.").strip()
+    article_context = str(term.get("article_context") or "기사 맥락이 저장되지 않았습니다.").strip()
+    remember = str(term.get("reason") or concept).strip()
     lines = [
-        f"## {term.get('term') or term.get('term_name') or '학습 용어'}",
-        f"- 분류: {term.get('category') or '기타'}",
-        f"- 기본 개념: {term.get('simple_definition') or '정의가 저장되지 않았습니다.'}",
-        f"- 기사에서의 의미: {term.get('article_context') or '연결된 기사 맥락이 없습니다.'}",
+        "한 줄 개념",
+        concept[:1000],
+        "",
+        "헷갈렸던 부분 Q&A",
     ]
     if conversations:
-        lines.extend(["", "### AI Tutor 대화에서 정리한 내용"])
         for item in conversations[-8:]:
             question = str(item.get("question") or "").strip()
             answer = str(item.get("answer") or "").strip()
             if question and answer:
-                lines.extend([f"**Q.** {question}", f"**A.** {answer[:1600]}", ""])
-    return "\n".join(lines).strip()
+                lines.extend([f"Q. {question[:200]}", f"A. {answer[:500]}", ""])
+    else:
+        lines.append("아직 이 용어에 연결된 질문과 답변이 없습니다.")
+    lines.extend([
+        "",
+        "기사에서 중요한 이유",
+        article_context[:1000],
+        "",
+        "기억할 점",
+        remember[:700],
+    ])
+    return "\n".join(lines).strip()[:7900]
 
 
 def save_session_study_record(session_id: str, term: dict, note: str = "") -> tuple[str, int, int]:
@@ -340,12 +352,9 @@ def save_session_study_record(session_id: str, term: dict, note: str = "") -> tu
         relevant = [dict(row) for row in conn.execute("""SELECT question,answer,article_id FROM session_turns
             WHERE session_id=? AND term_key=? AND related_to_selected=1
             ORDER BY created_at""", (session_id, term_key)).fetchall()]
-        generated_note = _draft_session_study_note(term, relevant)
-        extra_note = str(note or "").strip()
-        if extra_note:
-            generated_note += f"\n\n### 추가 메모\n{extra_note}"
+        final_note = str(note or "").strip() or _draft_session_study_note(term, relevant)
         conn.execute("""UPDATE session_learning_records SET note=?
-            WHERE session_id=? AND term_key=?""", (generated_note, session_id, term_key))
+            WHERE session_id=? AND term_key=?""", (final_note[:8000], session_id, term_key))
         inserted = 0
         for item in relevant:
             qid = hashlib.sha256(

@@ -13,6 +13,7 @@ const chatThreads = ref({})
 const restoredThreadTerms = ref([])
 const activeChatThreadKey = ref('')
 const studyNote = ref('')
+const memoDraftReady = ref(false)
 const studyRecords = ref([])
 const selectedRecordKey = ref('')
 const readArticles = ref([])
@@ -58,6 +59,48 @@ const tutorTerms = computed(() => {
 const selectedTutorTerm = computed(() => tutorTerms.value.find(
   (item) => termStorageKey(item.term) === termStorageKey(tutorTerm.value),
 ) ?? null)
+const selectedTutorQAs = computed(() => {
+  if (!selectedTutorTerm.value) return []
+  const selectedKey = termStorageKey(selectedTutorTerm.value.term)
+  const conversations = []
+  for (let index = 0; index < messages.value.length - 1; index += 1) {
+    const questionMessage = messages.value[index]
+    const answerMessage = messages.value[index + 1]
+    if (questionMessage.role !== 'user' || answerMessage.role !== 'assistant' || !answerMessage.content) continue
+    if (!answerMessage.relatedToSelected) continue
+    const answerTermKey = termStorageKey(answerMessage.selectedTerm || selectedTutorTerm.value.term)
+    if (answerTermKey !== selectedKey) continue
+    conversations.push({ question: questionMessage.content, answer: answerMessage.content })
+  }
+  return conversations.slice(-8)
+})
+const easyCategoryDescriptions = {
+  Modality: '치료 효과를 내기 위해 사용하는 치료 방식이에요.',
+  Drug: '질병을 치료하거나 조절하기 위해 개발하는 약이에요.',
+  Target: '약이 찾아가거나 작용하도록 정해둔 목표물이에요.',
+  Biomarker: '몸의 상태나 치료 반응을 알려주는 측정 신호예요.',
+  Disease: '치료와 연구의 대상이 되는 질환이에요.',
+  'Clinical Trial': '약을 사람에게 사용해 안전성과 효과를 단계적으로 확인하는 과정이에요.',
+  'Clinical Metric': '임상시험의 결과를 판단할 때 살펴보는 측정 기준이에요.',
+  Regulatory: '의약품 개발과 허가에 필요한 공식 기준과 절차예요.',
+  Business: '제약 기업의 계약, 투자, 사업 전략과 관련된 내용이에요.',
+  Manufacturing: '의약품을 일정한 품질로 만들어 공급하는 과정이에요.',
+  Platform: '여러 약이나 연구에 반복해서 활용하는 기반 기술이에요.',
+  Diagnostic: '질환이나 치료 반응을 확인하는 검사 방법이에요.',
+  Mechanism: '치료가 몸 안에서 효과를 내는 원인과 과정이에요.',
+  Technology: '의약품 연구·개발·생산에 활용하는 기술이에요.',
+}
+const selectedTermGuide = computed(() => {
+  const term = selectedTutorTerm.value
+  if (!term) return []
+  const definition = String(term.simple_definition || '용어의 기본 정의가 아직 준비되지 않았습니다.')
+  return [
+    { label: '한 줄 정의', content: definition },
+    { label: '쉽게 말하면', content: easyCategoryDescriptions[term.category] || `핵심은 ${definition}` },
+    { label: '이 기사에서는', content: term.article_context || '연결된 기사 설명이 없습니다.' },
+    { label: '지금 기억할 한 가지', content: term.reason || `이 용어의 기본 정의를 기억하세요: ${definition}` },
+  ]
+})
 const sortedStudyRecords = computed(() => [...studyRecords.value].sort((left, right) => {
   const leftTime = Date.parse(left.updated_at || '') || 0
   const rightTime = Date.parse(right.updated_at || '') || 0
@@ -85,7 +128,7 @@ const recordCategoryLabels = {
   Platform: '플랫폼', Diagnostic: '진단', Mechanism: '작용 기전', Technology: '기술',
   Other: '기타',
 }
-const canSave = computed(() => Boolean(selectedTutorTerm.value && messages.value.some((item) => item.role === 'assistant' && item.content)))
+const canSave = computed(() => Boolean(selectedTutorTerm.value && memoDraftReady.value && studyNote.value.trim()))
 const starterQuestions = [
   { label: '쉽게 비유해줘', question: '이 용어를 일상적인 예로 쉽게 비유해줘.' },
   { label: '기사에서 왜 중요해?', question: '이 용어가 기사에서 왜 중요하게 다뤄졌는지 설명해줘.' },
@@ -214,14 +257,35 @@ function switchTutorTerm(termName, force = false) {
   activeChatThreadKey.value = nextKey
   tutorTerm.value = nextName
   messages.value = [...(chatThreads.value[nextKey] || [])]
-  const matchingTerm = tutorTerms.value.find((item) => termStorageKey(item.term) === nextKey)
-  studyNote.value = matchingTerm?.note || ''
+  studyNote.value = ''
+  memoDraftReady.value = false
   saveMessage.value = ''
 }
 
 function selectStarterQuestion(prompt) {
   question.value = prompt
   document.querySelector('#question-input')?.focus()
+}
+
+function buildStudyNoteDraft() {
+  const term = selectedTutorTerm.value
+  if (!term) return
+  const definition = String(term.simple_definition || '용어의 기본 정의를 확인해 보세요.').slice(0, 900)
+  const articleContext = String(term.article_context || term.reason || '현재 기사와 직접 연결된 설명이 없습니다.').slice(0, 900)
+  const remember = String(term.reason || definition).slice(0, 700)
+  const qaSection = selectedTutorQAs.value.length
+    ? selectedTutorQAs.value.map(({ question: asked, answer }) => (
+      `Q. ${String(asked).slice(0, 200)}\nA. ${String(answer).slice(0, 500)}`
+    )).join('\n\n')
+    : '아직 이 용어에 연결된 질문과 답변이 없습니다.'
+  studyNote.value = [
+    '한 줄 개념', definition,
+    '', '헷갈렸던 부분 Q&A', qaSection,
+    '', '기사에서 중요한 이유', articleContext,
+    '', '기억할 점', remember,
+  ].join('\n').slice(0, 7900)
+  memoDraftReady.value = true
+  saveMessage.value = ''
 }
 
 function handleQuestionKeydown(event) {
@@ -301,6 +365,7 @@ function restoreSnapshot(snapshot) {
   activeChatThreadKey.value = termStorageKey(tutorTerm.value)
   messages.value = [...(groupedThreads[activeChatThreadKey.value] || [])]
   studyNote.value = ''
+  memoDraftReady.value = false
   saveMessage.value = ''
   readMessage.value = ''
   selectedIssueId.value = ''
@@ -512,6 +577,8 @@ async function sendQuestion(questionOverride = '') {
   errorMessage.value = ''
   saveMessage.value = ''
   const selected = selectedTutorTerm.value
+  studyNote.value = ''
+  memoDraftReady.value = false
   messages.value.push({ role: 'user', content: asked })
   const assistantMessage = {
     role: 'assistant', content: '', sources: [], recommendations: [],
@@ -791,6 +858,17 @@ initializeSession()
             </select>
             <span class="thread-hint">{{ tutorTerm ? `${tutorTerm} 대화` : '일반 대화' }}는 다른 용어 대화와 분리되어 이어집니다.</span>
           </div>
+          <section v-if="selectedTutorTerm" class="term-guide" aria-label="용어 빠른 정리">
+            <div class="term-guide-heading">
+              <div><span class="mini-label">QUICK STUDY</span><h3>{{ selectedTutorTerm.term }} 빠른 정리</h3></div>
+              <span>{{ selectedTutorTerm.category }}</span>
+            </div>
+            <article v-for="(item, index) in selectedTermGuide" :key="item.label" class="term-guide-row">
+              <span class="term-guide-number">{{ index + 1 }}</span>
+              <div><strong>{{ item.label }}</strong><p>{{ item.content }}</p></div>
+            </article>
+            <p class="term-guide-next">더 궁금한 내용은 아래 AI Tutor에 질문해 보세요.</p>
+          </section>
           <div ref="chatPanel" class="chat-panel" aria-live="polite">
             <div v-if="!messages.length" class="empty-chat">
               <div class="empty-icon">✳</div>
@@ -852,16 +930,22 @@ initializeSession()
 
         <section v-if="selectedTutorTerm" class="card save-card">
           <div class="section-heading compact-heading">
-            <div><p class="eyebrow">YOUR MEMORY</p><h2>학습 기록 저장</h2></div>
+            <div><p class="eyebrow">YOUR MEMORY</p><h2>대화를 내 학습 메모로 정리</h2></div>
             <span class="save-term-label">{{ selectedTutorTerm.term }}</span>
           </div>
-          <label class="field-label" for="study-note">추가 메모 <span>선택</span></label>
-          <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="3" placeholder="대화 기반 학습 정리는 자동으로 저장됩니다. 덧붙일 내용이 있으면 적어 주세요."></textarea>
-          <button class="button button-secondary button-wide" :disabled="!canSave || busy" @click="saveStudyRecord">
-            학습 용어와 관련 대화 저장 <span aria-hidden="true">↓</span>
+          <p class="card-intro">AI Tutor 대화를 반영해 초안을 만듭니다. 대화가 없어도 기본 용어 정리로 시작할 수 있고, 초안은 직접 수정할 수 있습니다.</p>
+          <button class="button button-secondary button-wide memo-draft-button" :disabled="busy" @click="buildStudyNoteDraft">
+            대화를 반영한 학습 메모 만들기 <span aria-hidden="true">✎</span>
           </button>
+          <template v-if="memoDraftReady">
+            <label class="field-label" for="study-note">학습 메모 초안 <span>자유롭게 수정할 수 있어요</span></label>
+            <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="14" maxlength="8000"></textarea>
+            <button class="button button-primary button-wide" :disabled="!canSave || busy" @click="saveStudyRecord">
+              이 용어 학습 기록 저장 <span aria-hidden="true">↓</span>
+            </button>
+          </template>
           <p v-if="saveMessage" class="save-success">{{ saveMessage }}</p>
-          <p class="privacy-note">용어 정리와 이 용어에 연결된 AI Tutor 대화를 자동 저장합니다. 추가 메모를 입력하면 함께 보관합니다.</p>
+          <p class="privacy-note">저장 버튼은 화면의 메모 내용을 그대로 저장합니다. 관련 Q&A도 복습 기록에 연결됩니다.</p>
         </section>
       </div>
       <div class="step-navigation">
