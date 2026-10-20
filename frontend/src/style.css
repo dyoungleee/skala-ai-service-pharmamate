@@ -217,7 +217,9 @@ a { color: inherit; }
 .record-note-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
 .record-note-heading .mini-label { margin-bottom: 4px; }
 .record-note-heading h3 { margin: 0; color: #354f5a; font-size: 13px; }
-.record-note-body { color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-note-body { display: grid; gap: 12px; color: #455b65; overflow-wrap: anywhere; }
+.record-note-section h4 { margin: 0 0 4px; color: #354f5a; font-size: 12px; line-height: 1.5; }
+.record-note-section p { margin: 0; color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; }
 .records-empty { margin: 3px 0 12px; color: #89969c; font-size: 11px; line-height: 1.7; }
 .records-empty strong { color: #536c63; }
 .page-footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #e6e9ec; padding: 18px 2px 28px; color: #a1aaae; font-size: 9px; }
@@ -269,9 +271,13 @@ a { color: inherit; }
 .term-guide-heading > span { color: #7d9188; font-size: 9px; }
 .term-guide-row { display: grid; grid-template-columns: 23px minmax(0, 1fr); gap: 9px; padding: 11px 0 8px; }
 .term-guide-number { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; color: #28735a; background: #e3f1e9; font-size: 10px; font-weight: 700; }
-.term-guide-row strong { color: #45615a; font-size: 10px; }
+.term-guide-row strong { color: #45615a; font-size: 12px; line-height: 1.5; }
 .term-guide-row p { margin: 4px 0 0; color: #536771; font-size: 11px; line-height: 1.65; }
 .term-guide-next { margin: 4px 0 0 32px; color: #899a9b; font-size: 9px; }
 .memo-draft-button { margin-top: 8px; }
 .save-card .card-intro { margin: -7px 0 4px; line-height: 1.65; }
-.note-input { min-height: 230px; resize: vertical; white-space: pre-wrap; line-height: 1.8; }
+.memo-sections-editor { display: grid; gap: 12px; margin: 6px 0 14px; }
+.memo-section-editor { display: grid; gap: 5px; }
+.memo-section-heading { color: #354f5a; font-size: 14px; line-height: 1.4; font-weight: 700; }
+.memo-section-input { min-height: 66px; resize: vertical; font-size: 12px; line-height: 1.7; }
+.memo-section-editor:nth-child(2) .memo-section-input { min-height: 120px; }

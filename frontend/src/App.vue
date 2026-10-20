@@ -12,7 +12,7 @@ const messages = ref([])
 const chatThreads = ref({})
 const restoredThreadTerms = ref([])
 const activeChatThreadKey = ref('')
-const studyNote = ref('')
+const studyMemoSections = ref({ concept: '', confusingQA: '', articleImportance: '', remember: '' })
 const memoDraftReady = ref(false)
 const studyRecords = ref([])
 const selectedRecordKey = ref('')
@@ -128,7 +128,23 @@ const recordCategoryLabels = {
   Platform: '플랫폼', Diagnostic: '진단', Mechanism: '작용 기전', Technology: '기술',
   Other: '기타',
 }
-const canSave = computed(() => Boolean(selectedTutorTerm.value && memoDraftReady.value && studyNote.value.trim()))
+const studyMemoSectionDefinitions = [
+  { key: 'concept', heading: '한 줄 개념' },
+  { key: 'confusingQA', heading: '헷갈렸던 부분 Q&A' },
+  { key: 'articleImportance', heading: '기사에서 중요한 이유' },
+  { key: 'remember', heading: '기억할 점' },
+]
+const selectedStudyMemoSections = computed(() => {
+  const note = selectedStudyRecord.value?.note || selectedStudyRecord.value?.simple_definition || ''
+  const sections = parseStudyMemoSections(note)
+  return studyMemoSectionDefinitions
+    .map((section) => ({ ...section, content: sections[section.key] }))
+    .filter((section) => section.content)
+})
+const canSave = computed(() => Boolean(
+  selectedTutorTerm.value && memoDraftReady.value
+  && studyMemoSectionDefinitions.some(({ key }) => studyMemoSections.value[key].trim()),
+))
 const starterQuestions = [
   { label: '쉽게 비유해줘', question: '이 용어를 일상적인 예로 쉽게 비유해줘.' },
   { label: '기사에서 왜 중요해?', question: '이 용어가 기사에서 왜 중요하게 다뤄졌는지 설명해줘.' },
@@ -257,7 +273,7 @@ function switchTutorTerm(termName, force = false) {
   activeChatThreadKey.value = nextKey
   tutorTerm.value = nextName
   messages.value = [...(chatThreads.value[nextKey] || [])]
-  studyNote.value = ''
+  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
   memoDraftReady.value = false
   saveMessage.value = ''
 }
@@ -278,12 +294,12 @@ function buildStudyNoteDraft() {
       `Q. ${String(asked).slice(0, 200)}\nA. ${String(answer).slice(0, 500)}`
     )).join('\n\n')
     : '아직 이 용어에 연결된 질문과 답변이 없습니다.'
-  studyNote.value = [
-    '한 줄 개념', definition,
-    '', '헷갈렸던 부분 Q&A', qaSection,
-    '', '기사에서 중요한 이유', articleContext,
-    '', '기억할 점', remember,
-  ].join('\n').slice(0, 7900)
+  studyMemoSections.value = {
+    concept: definition,
+    confusingQA: qaSection,
+    articleImportance: articleContext,
+    remember,
+  }
   memoDraftReady.value = true
   saveMessage.value = ''
 }
@@ -305,12 +321,38 @@ function formatRecordDate(value) {
   })
 }
 
-function displayStudyNote(record) {
-  return String(record?.note || record?.simple_definition || '')
+function cleanStudyMemoText(value) {
+  return String(value || '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^[-*]\s+/gm, '• ')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .trim()
+}
+
+function parseStudyMemoSections(value) {
+  const sections = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
+  const headingKeys = new Map(studyMemoSectionDefinitions.map(({ key, heading }) => [heading, key]))
+  let activeKey = ''
+  let foundHeading = false
+  for (const line of String(value || '').split(/\r?\n/)) {
+    const key = headingKeys.get(line.trim())
+    if (key) {
+      activeKey = key
+      foundHeading = true
+      continue
+    }
+    if (activeKey) sections[activeKey] += `${sections[activeKey] ? '\n' : ''}${line}`
+  }
+  if (!foundHeading) sections.concept = cleanStudyMemoText(value)
+  for (const key of Object.keys(sections)) sections[key] = cleanStudyMemoText(sections[key])
+  return sections
+}
+
+function serializeStudyMemo() {
+  return studyMemoSectionDefinitions
+    .map(({ key, heading }) => `${heading}\n${studyMemoSections.value[key].trim()}`)
+    .join('\n\n')
+    .slice(0, 7900)
 }
 
 function selectStudyRecord(record) {
@@ -364,7 +406,7 @@ function restoreSnapshot(snapshot) {
   tutorTerm.value = savedTerm || selectedTerm.value
   activeChatThreadKey.value = termStorageKey(tutorTerm.value)
   messages.value = [...(groupedThreads[activeChatThreadKey.value] || [])]
-  studyNote.value = ''
+  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
   memoDraftReady.value = false
   saveMessage.value = ''
   readMessage.value = ''
@@ -379,7 +421,11 @@ async function activateSession(credentials) {
   persistSessionChoices()
   restoreSnapshot(snapshot)
   await refreshRecords()
-  studyNote.value = selectedTutorTerm.value?.note || ''
+  const savedNote = selectedTutorTerm.value?.note || ''
+  if (savedNote) {
+    studyMemoSections.value = parseStudyMemoSections(savedNote)
+    memoDraftReady.value = true
+  }
   await refreshReadingLists()
   currentStatus.value = '저장된 학습 세션을 불러왔습니다.'
 }
@@ -577,7 +623,7 @@ async function sendQuestion(questionOverride = '') {
   errorMessage.value = ''
   saveMessage.value = ''
   const selected = selectedTutorTerm.value
-  studyNote.value = ''
+  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
   memoDraftReady.value = false
   messages.value.push({ role: 'user', content: asked })
   const assistantMessage = {
@@ -644,7 +690,7 @@ async function saveStudyRecord() {
           article_context: selectedTutorTerm.value.article_context || '',
           aliases: selectedTutorTerm.value.aliases || [],
         },
-        note: studyNote.value,
+        note: serializeStudyMemo(),
       }),
     })
     saveMessage.value = result.message
@@ -938,8 +984,13 @@ initializeSession()
             대화를 반영한 학습 메모 만들기 <span aria-hidden="true">✎</span>
           </button>
           <template v-if="memoDraftReady">
-            <label class="field-label" for="study-note">학습 메모 초안 <span>자유롭게 수정할 수 있어요</span></label>
-            <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="14" maxlength="8000"></textarea>
+            <p class="field-label">학습 메모 초안 <span>각 항목의 설명을 자유롭게 수정할 수 있어요</span></p>
+            <div class="memo-sections-editor">
+              <section v-for="section in studyMemoSectionDefinitions" :key="section.key" class="memo-section-editor">
+                <label class="memo-section-heading" :for="`memo-${section.key}`">{{ section.heading }}</label>
+                <textarea :id="`memo-${section.key}`" v-model="studyMemoSections[section.key]" class="text-input memo-section-input" :rows="section.key === 'confusingQA' ? 5 : 3" maxlength="7900"></textarea>
+              </section>
+            </div>
             <button class="button button-primary button-wide" :disabled="!canSave || busy" @click="saveStudyRecord">
               이 용어 학습 기록 저장 <span aria-hidden="true">↓</span>
             </button>
