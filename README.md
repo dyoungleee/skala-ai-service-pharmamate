@@ -83,6 +83,21 @@ OPENAI_API_KEY는 필수이고, TAVILY_API_KEY는 최신 웹 검색을 위한 �
 - 저장 데이터는 로컬 컴퓨터에 남습니다. 다른 컴퓨터로 옮길 때는 SQLite 파일도 함께 복사하고, 필요한 기록은 주기적으로 백업하세요.
 - 같은 데이터베이스를 사용하면 기존 2.1 학습 기록을 이어서 사용할 수 있습니다. 이미 저장된 중복 기사 행은 자동으로 정리하지 않습니다.
 
+## 터미널 답변 비교
+
+`eval/compare_answers.py`는 동일 평가 질문을 기준선과 현재 후보에 실행해 답변, 출처, 라우트, Validator 상태, 응답 시간을 나란히 보여줍니다. 시작 전 화면 점검은 API를 부르지 않습니다.
+
+    python eval/compare_answers.py --case-id RAG-01 --demo
+
+실제 모델 응답을 비교하려면 의존성을 설치하고 `.env`에 OpenAI 키를 설정한 뒤 실행합니다. 실제 실행은 두 쪽에서 LLM을 호출해 API 비용이 발생할 수 있습니다.
+
+    python eval/compare_answers.py --case-id RAG-01 --baseline-ref HEAD
+    python eval/compare_answers.py --all --baseline-ref HEAD
+
+`HEAD`는 기능 개발 직전의 승인된 커밋이어야 합니다. 기준선은 해당 커밋의 노트북을 읽고, 개선 후보는 현재 작업 트리의 노트북을 사용합니다. 새 기능이 별도 Python 모듈에 있으면 `--candidate-runner package.module:function`으로 실행기를 지정합니다. 학습 기록은 샘플 fixture만 사용하며, SQLite와 Tavily에는 접근하지 않습니다. 실제 답변 기록은 로컬 `eval/results/latest.jsonl`에 저장되고 Git에서 제외됩니다.
+
+LangGraph 구성은 `backend/app/agents/graph.py`, 환경 설정은 `backend/app/core/config.py`, SQLite 접근은 `backend/app/db/repository.py`, 기사 본문 추출은 `backend/app/services/article_extraction.py`에 있습니다. 노트북은 이 모듈들을 불러 기존 Gradio 흐름을 연결합니다. F1은 동작을 바꾸지 않는 모듈화 단계이므로, 비교에서는 답변 변화보다 기능 회귀 여부를 확인합니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.
