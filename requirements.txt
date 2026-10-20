@@ -1,6 +1,8 @@
 # Gradio UI and notebook runtime
 gradio>=5,<7
 ipykernel>=6
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
 
 # LLM and Agent workflow
 langchain-openai>=0.3,<2

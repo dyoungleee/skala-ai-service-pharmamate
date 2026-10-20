@@ -140,6 +140,19 @@ Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니
 
     python eval/compare_answers.py --all --baseline-ref dc9acd8
 
+## F6.1 FastAPI REST API
+
+`backend/app/main.py`에서 기사 분석, Agent 답변, 학습 기록 목록 API를 실행합니다. 앱 서버가 사용하는 모델과 SQLite 저장소는 첫 기능 요청에서 준비됩니다. API를 로컬 주소로 실행하세요.
+
+    uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+
+- `GET /api/health`: 서버 상태
+- `POST /api/articles/analyze`: 공개 기사 URL 또는 직접 붙여넣은 본문 분석
+- `POST /api/chat`: 답변, 출처, Validator 결과, 후속 질문 반환
+- `GET /api/study-records`: 저장된 용어의 요약 목록
+
+요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 API는 localhost 단일 사용자 개발용이며 로그인·세션 접근 제어는 F7 범위입니다.
+
 ## 제한 사항과 향후 개선
 
 - 뉴스 사이트의 접근 제한, 동적 페이지, 본문 구조 차이 때문에 URL 추출이 실패하거나 일부만 가져올 수 있습니다. 이때는 원문을 직접 붙여넣어 주세요.
