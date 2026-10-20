@@ -261,7 +261,7 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 ### 10.2 3.0 후속 범위
 
 1. **F5 — 동적 후속 질문 (완료):** 답변과 질문을 한 번의 구조화 출력으로 생성한다. 원리 심화·개념 연결·한계/응용 질문 3개와 학습 목표를 표시한다. 합성 입력 4건에서 별도 생성 방식과 지연·토큰·비용을 비교하고, 결과는 [F5 실험 보고서](experiments/F5_dynamic_followup_questions.md)에 기록했다.
-2. **F6 — API와 화면 (F6.1~F6.3 구현):** FastAPI 기사/질문·학습 기록 API, 검증 답변 SSE, Vue 화면을 연결했다. 기사 분석 → 질문 → 출처·후속 질문 확인 → 검토한 학습 기록 저장 흐름을 제공한다. 백엔드 통합 테스트 37개와 Vue production build를 통과했다. 실제 외부 모델·Tavily를 연결한 브라우저 종단 간 확인은 수행하지 않았다. API 조건은 [F6.1 보고서](experiments/F6_1_fastapi_api.md), SSE 동작은 [F6.2 보고서](experiments/F6_2_sse_streaming.md), Vue 연결은 [F6.3 보고서](experiments/F6_3_vue_frontend.md)에 기록한다.
+2. **F6 — API와 화면 (F6.1~F6.4 구현):** FastAPI 기사/질문·학습 기록 API, 검증 답변 SSE, Vue 화면을 연결했다. 기사 분석 → 질문 → 출처·후속 질문 확인 → 검토한 학습 기록 저장 흐름을 제공한다. 백엔드 통합 테스트 37개, Vue production build, Chrome 합성 API 브라우저 E2E를 통과했다. 실제 OpenAI·Tavily를 연결한 외부 서비스 E2E는 수행하지 않았다. API 조건은 [F6.1 보고서](experiments/F6_1_fastapi_api.md), SSE 동작은 [F6.2 보고서](experiments/F6_2_sse_streaming.md), Vue 연결은 [F6.3 보고서](experiments/F6_3_vue_frontend.md), 브라우저 흐름과 오류 복구는 [F6.4 보고서](experiments/F6_4_browser_e2e.md)에 기록한다.
 3. **F7 — 세션과 이슈:** F7.1 익명 세션 토큰, 대화·기사 복원, 세션 소유 학습 기록과 RAG 범위를 구현했다. 별도 Python 프로세스에서 같은 SQLite 파일을 다시 열어 토큰 인증 후 기사·대화 복원까지 확인했다. F7.2에서 세션 안의 기사 URL·본문·제목 중복 판정, 산업 이슈 자동·수동 연결 및 UI 목록을 추가했다. 기존 SQLite 테이블은 보존하고 새 테이블만 추가한다. 합성 기준 비교와 한계는 [F7.1 보고서](experiments/F7_1_sessions.md), [F7.2 보고서](experiments/F7_2_article_issue_management.md)에 있다.
 4. **F8 — 선택 기술 (검토 완료):** 합성 질문 24개에서 개선된 Query Routing을 채택하고, MCP 및 memory/web 병렬 실행을 도입했다. Dynamic Planning과 Ollama는 각각 추가 비용과 낮은 라우팅 정확도·긴 지연으로 보류했다. 개별 결과와 결정 근거를 보고서·ADR로 남겼다.
 
@@ -290,8 +290,8 @@ API 경로는 구현 중 조정 가능하며, 세션·기록 접근 권한 검�
 
 ### 3.0 확장 완료 시점
 
-- [x] Vue에서 기사 입력 → 분석 → Agent 질문 → 기록 저장 흐름을 구현했다. API 테스트는 가짜 Agent·임시 DB로 검증했다.
-- [x] SSE는 검증된 답변만 전송하고, API 오류·사용자 취소·연결 예외를 화면 오류로 처리한다. 실제 네트워크 단절 브라우저 E2E는 수행하지 않았다.
+- [x] Vue에서 기사 입력 → 분석 → Agent 질문 → 후속 질문 입력 → 학습 기록 및 읽은 기사 저장 흐름을 구현했다. API 단위 테스트와 합성 API를 사용한 Chrome 브라우저 E2E로 검증했다.
+- [x] SSE는 검증된 답변만 전송하고 API 오류·사용자 취소·명시적 SSE 오류·연결 무응답을 화면 오류로 처리한다. 무응답 제한에 도달하면 스트림을 중단하고 질문 입력을 다시 활성화한다.
 - [x] 재접속·서버 프로세스 재시작 후 허가된 세션의 기사·대화를 복원할 수 있다. 별도 Python 프로세스의 SQLite 재연결 및 API 토큰 검증 테스트와 Vue production build를 통과했다.
 - [x] 답변 직후 학습 목적이 다른 후속 질문 3개가 갱신된다.
 - [x] 동일 기사 재등록을 막고, 서로 다른 기사가 같은 산업 이슈를 다루면 연결한다. 합성 5쌍 기준 중복 Recall 0.5→1.0, 이슈 연결 precision/recall 1.0/1.0; 표본 한계는 F7.2 보고서에 기록했다.

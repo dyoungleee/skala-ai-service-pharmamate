@@ -25,6 +25,7 @@ const saveMessage = ref('')
 const chatPanel = ref(null)
 let activeController = null
 const SESSION_STORAGE_KEY = 'pharmamate.sessions.v1'
+const STREAM_IDLE_TIMEOUT_MS = Number(import.meta.env.VITE_STREAM_IDLE_TIMEOUT_MS) || 120_000
 
 const terms = computed(() => articleResult.value?.analysis?.key_terms ?? [])
 const currentTerm = computed(() => terms.value.find((item) => item.term === selectedTerm.value) ?? null)
@@ -225,6 +226,7 @@ function handleSseEvent(name, data, assistantMessage) {
   } else if (name === 'recommendations') {
     assistantMessage.recommendations = data.items || []
   } else if (name === 'done') {
+    assistantMessage.streamComplete = true
     assistantMessage.route = data.route || ''
     assistantMessage.validationStatus = data.validation_status || ''
     assistantMessage.validationRetries = data.validation_retries || 0
@@ -258,13 +260,28 @@ async function consumeSse(response, assistantMessage) {
   }
 
   while (true) {
-    const { value, done } = await reader.read()
+    let timeoutId
+    const idleTimeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(
+        '스트리밍 연결이 일정 시간 동안 응답하지 않아 종료했습니다. 다시 시도해 주세요.',
+      )), STREAM_IDLE_TIMEOUT_MS)
+    })
+    let chunk
+    try {
+      chunk = await Promise.race([reader.read(), idleTimeout])
+    } finally {
+      clearTimeout(timeoutId)
+    }
+    const { value, done } = chunk
     if (done) break
     buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
     dispatchBlocks()
   }
   buffer += decoder.decode()
   dispatchBlocks()
+  if (!assistantMessage.streamComplete) {
+    throw new Error('스트리밍 연결이 답변 완료 전에 종료됐습니다. 다시 시도해 주세요.')
+  }
 }
 
 async function sendQuestion() {
@@ -307,6 +324,7 @@ async function sendQuestion() {
       assistantMessage.content = '응답을 취소했습니다.'
       currentStatus.value = '요청이 취소됐습니다.'
     } else {
+      activeController?.abort()
       assistantMessage.content ||= '답변을 받지 못했습니다.'
       errorMessage.value = error.message
       currentStatus.value = ''

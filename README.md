@@ -1,6 +1,6 @@
 # PharmaMate 3.0 — 제약·바이오 기사 학습 Agent
 
-**기사 읽기 → Agent 질문 → 내 학습 기록**의 흐름으로 제약·바이오 기사를 읽고 낯선 용어를 익히도록 돕는 개인용 학습 도구입니다. VS Code에서 Jupyter 노트북과 Gradio를 실행하며, 학습 기록은 로컬 SQLite 데이터베이스에 저장합니다.
+**기사 읽기 → Agent 질문 → 내 학습 기록**의 흐름으로 제약·바이오 기사를 읽고 낯선 용어를 익히도록 돕는 개인용 학습 도구입니다. 로컬 Vue/FastAPI 화면과 기존 Jupyter/Gradio 화면을 제공하며, 학습 기록은 SQLite 데이터베이스에 저장합니다.
 
 ## 만들게 된 배경
 
@@ -163,7 +163,7 @@ Agent 답변과 같은 구조화 응답에서 후속 질문 3개를 생성합니
 
 요청·응답 스키마와 오류 형식은 FastAPI `/docs` 화면에서 확인할 수 있습니다. API 테스트는 합성 기사와 가짜 Agent로 실행해 실제 학습 DB를 열지 않습니다. 현재 앱은 localhost에서 실행하는 로그인 없는 개발용이며, 익명 세션별 bearer token 접근 제어가 구현되어 있습니다.
 
-스트림 이벤트는 `status`, `token`, `sources`, `recommendations`, `done`, `error`입니다. Agent의 답변 생성·Validator 처리 중 단계 상태를 전송하고, 최종 답변은 근거 검증이 완료된 뒤 작은 조각으로 전송합니다. 따라서 검증 전 초안은 브라우저에 보이지 않습니다. Vue 클라이언트 연결은 F6.3에서 제공합니다.
+스트림 이벤트는 `status`, `token`, `sources`, `recommendations`, `done`, `error`입니다. Agent의 답변 생성·Validator 처리 중 단계 상태를 전송하고, 최종 답변은 근거 검증이 완료된 뒤 작은 조각으로 전송합니다. 따라서 검증 전 초안은 브라우저에 보이지 않습니다. Vue 클라이언트는 유휴 SSE 스트림이 기본 120초 동안 새 데이터를 보내지 않으면 요청을 중단하고 오류를 표시합니다. 로컬 검증용 한도는 `VITE_STREAM_IDLE_TIMEOUT_MS`로 조절할 수 있습니다.
 
 ## F6.3 Vue 브라우저 화면
 
@@ -183,7 +183,7 @@ Vue 화면은 기사 입력·분석, 핵심 용어 선택, SSE 채팅, 출처·�
 
 브라우저에서 `http://127.0.0.1:5173`을 엽니다. 프로덕션 번들 점검은 `npm run build --prefix frontend`로 실행합니다. 로컬에서 사용하려면 앞서 설명한 `.env`와 Python 의존성을 준비해야 합니다.
 
-화면과 저장 API의 변경 및 검증 조건은 [F6.3 실험 보고서](docs/experiments/F6_3_vue_frontend.md)에 기록했습니다.
+화면과 저장 API의 변경 및 검증 조건은 [F6.3 실험 보고서](docs/experiments/F6_3_vue_frontend.md)에 기록했습니다. 합성 API를 사용해 Chrome에서 기사 분석부터 저장·새로고침 복원·SSE 오류·연결 종료 복구까지 확인한 결과는 [F6.4 브라우저 E2E 보고서](docs/experiments/F6_4_browser_e2e.md)에 있습니다.
 
 ## F7.1 세션 복원과 접근 범위
 
