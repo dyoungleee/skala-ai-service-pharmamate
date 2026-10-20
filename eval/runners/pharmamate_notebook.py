@@ -187,7 +187,10 @@ def _run(
         "answer": result.get("answer", ""),
         "sources": result.get("sources", []),
         "route": result.get("route", ""),
-        "validator": "미적용(2.2 기준선)",
+        "validator": "미적용(2.2 기준선)" if "validation_status" not in result else result.get("validation_status", "미제공"),
+        "validation_status": result.get("validation_status"),
+        "validation_retries": result.get("validation_retries", 0),
+        "unsupported_claims": result.get("unsupported_claims", []),
         "latency_seconds": elapsed,
         "tokens": None,
         "cost": None,
@@ -202,5 +205,7 @@ def run_baseline(case: dict[str, Any], *, revision: str | None = "HEAD") -> dict
 def run_candidate(case: dict[str, Any], *, revision: str | None = None) -> dict[str, Any]:
     source, label = _read_notebook(None)
     result = _run(source, f"candidate_{label}", case, memory_mode="semantic")
-    result["validator"] = "현재 후보에 별도 Validator 메타데이터 없음"
+    status = result.get("validation_status", "미제공")
+    retries = int(result.get("validation_retries", 0))
+    result["validator"] = f"{status} (수정 {retries}회)"
     return result

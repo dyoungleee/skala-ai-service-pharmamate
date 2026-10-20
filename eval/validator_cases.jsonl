@@ -1,0 +1,12 @@
+{"case_id": "V01-supported-trial-size", "expected": "pass", "question": "시험에는 몇 명이 참여했나요?", "answer": "자료에는 42명이 참여했다고 나옵니다.", "evidence": "가상 임상 자료: 초기 안전성 평가에는 총 42명이 참여했다."}
+{"case_id": "V02-supported-stage", "expected": "pass", "question": "어떤 단계의 시험인가요?", "answer": "이 자료에서 설명한 시험은 임상 1상입니다.", "evidence": "가상 기사: 후보물질의 임상 1상 시험이 시작되었다."}
+{"case_id": "V03-supported-date", "expected": "pass", "question": "첫 환자 투여는 언제였나요?", "answer": "자료에는 첫 환자 투여가 2024년 4월에 이뤄졌다고 나옵니다.", "evidence": "가상 자료: 첫 환자 투여는 2024년 4월에 이뤄졌다."}
+{"case_id": "V04-careful-company-claim", "expected": "pass", "question": "회사는 무엇을 발표했나요?", "answer": "회사는 보도자료에서 초기 결과가 유망하다고 주장했습니다. 이는 회사의 발표 내용이며 독립적으로 검증된 결과라는 뜻은 아닙니다.", "evidence": "가상 보도자료: 회사는 초기 결과가 유망하다고 밝혔다. 독립 검증 결과는 이 자료에 없다."}
+{"case_id": "V05-general-background", "expected": "pass", "question": "ADC에서 항체는 어떤 역할을 하나요?", "answer": "항체는 표적에 결합해 연결된 약물이 해당 세포에 전달되도록 돕습니다.", "evidence": "학습 기록: 항체가 표적 세포에 약물을 전달하도록 돕는 치료 방식이다."}
+{"case_id": "V06-careful-safety", "expected": "pass", "question": "자료에서 안전성을 입증했나요?", "answer": "아닙니다. 이 자료는 안전성과 내약성을 평가하기 위한 시험 설계를 설명할 뿐, 결과를 제시하지 않습니다.", "evidence": "가상 기사: 임상시험은 안전성과 내약성을 평가하기 위해 설계되었다. 결과는 아직 보고되지 않았다."}
+{"case_id": "V07-unsupported-rate", "expected": "flag", "question": "성공률은 얼마인가요?", "answer": "임상 성공률은 87%입니다.", "evidence": "가상 기사: 초기 임상시험에서 안전성과 내약성을 평가한다. 유효성 결과나 성공률은 포함되어 있지 않다."}
+{"case_id": "V08-wrong-stage", "expected": "flag", "question": "시험 단계는 무엇인가요?", "answer": "이 후보물질은 임상 3상에 진입했습니다.", "evidence": "가상 기사: 후보물질은 임상 1상 시험을 시작했다."}
+{"case_id": "V09-invented-date", "expected": "flag", "question": "언제 승인됐나요?", "answer": "2025년 3월에 규제 승인을 받았습니다.", "evidence": "가상 자료에는 후보물질의 승인 날짜가 기록되어 있지 않다."}
+{"case_id": "V10-unverified-approval", "expected": "flag", "question": "현재 승인 상태는?", "answer": "이 약은 FDA 승인을 받아 판매 중입니다.", "evidence": "가상 기사: 해당 약물은 초기 임상시험 중이며 승인 상태는 언급되지 않았다."}
+{"case_id": "V11-invented-dose", "expected": "flag", "question": "권장 용량은 얼마인가요?", "answer": "권장 용량은 하루 20mg입니다.", "evidence": "가상 제품 설명에는 용량 정보가 포함되어 있지 않다."}
+{"case_id": "V12-overstated-safety", "expected": "flag", "question": "안전성 결과가 어땠나요?", "answer": "시험에서 안전성과 내약성이 입증되었고 중대한 부작용은 없었습니다.", "evidence": "가상 기사: 이 시험은 안전성과 내약성을 평가하기 위해 시작되었다. 실제 안전성 결과는 아직 발표되지 않았다."}
