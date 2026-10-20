@@ -560,7 +560,7 @@ def mark_session_article_read(session_id: str, article: dict, issue_id: str = ""
             "duplicate_by": "", "issue_id": selected_issue_id,
             "issue_title": issue_title, "match_type": match_type,
             "message": "기사를 읽은 기록에 저장했습니다." if not selected_issue_id
-                else f"기사와 산업 이슈를 저장했습니다: {issue_title}",
+                else "기사와 산업 이슈를 저장했습니다.",
         }
 
 

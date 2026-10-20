@@ -433,6 +433,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         )}).json()
         self.assertTrue(first["saved"])
         self.assertEqual(first["match_type"], "new")
+        self.assertEqual(first["message"], "기사와 산업 이슈를 저장했습니다.")
 
         same_url = self.client.post(endpoint, headers=headers, json={"article": article(
             "a2", "새 제목", "https://www.news.example.org/story/1?utm_source=mail",
@@ -454,6 +455,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         )}).json()
         self.assertTrue(same_issue["saved"])
         self.assertEqual(same_issue["match_type"], "automatic")
+        self.assertEqual(same_issue["message"], "기사와 산업 이슈를 저장했습니다.")
         self.assertEqual(same_issue["issue_id"], first["issue_id"])
 
         other_phase = self.client.post(endpoint, headers=headers, json={"article": article(
