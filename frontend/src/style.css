@@ -62,6 +62,7 @@ a { color: inherit; }
 .compact-heading h2 { max-width: 460px; font-size: 16px; line-height: 1.4; }
 .field-label { display: flex; align-items: center; gap: 8px; margin: 15px 0 7px; color: #394d5a; font-size: 12px; font-weight: 600; }
 .field-label span { color: #9aa5ac; font-size: 10px; font-weight: 500; }
+.field-hint { margin: 6px 0 0; color: #89969c; font-size: 10px; line-height: 1.5; }
 .text-input { width: 100%; border: 1px solid #dce2e6; border-radius: 8px; background: #fff; color: var(--ink); padding: 11px 12px; font-size: 12px; outline: none; transition: border-color .15s, box-shadow .15s; }
 .text-input:focus, .composer textarea:focus { border-color: #73b29a; box-shadow: 0 0 0 3px #e6f3ed; }
 .text-input::placeholder, .composer textarea::placeholder { color: #a4afb6; }

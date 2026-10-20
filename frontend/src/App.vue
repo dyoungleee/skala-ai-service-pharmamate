@@ -185,8 +185,13 @@ async function analyzeArticle() {
   saveMessage.value = ''
   readMessage.value = ''
   selectedIssueId.value = ''
-  if (!url.value.trim() && !pastedText.value.trim()) {
+  const articleText = pastedText.value.trim()
+  if (!url.value.trim() && !articleText) {
     errorMessage.value = '기사 URL 또는 본문을 입력해 주세요.'
+    return
+  }
+  if (articleText && !manualTitle.value.trim()) {
+    errorMessage.value = '직접 붙여넣은 기사의 제목을 입력해 주세요.'
     return
   }
   busy.value = true
@@ -194,7 +199,11 @@ async function analyzeArticle() {
   try {
     const analyzed = await requestJson('/api/articles/analyze', {
       method: 'POST',
-      body: JSON.stringify({ url: url.value, pasted_text: pastedText.value, title: manualTitle.value }),
+      body: JSON.stringify({
+        url: articleText ? '' : url.value,
+        pasted_text: articleText,
+        title: articleText ? manualTitle.value.trim() : '',
+      }),
     })
     const firstTerm = analyzed.analysis.key_terms[0]?.term ?? ''
     await sessionRequest(`/api/sessions/${sessionId.value}/article`, {
@@ -451,12 +460,13 @@ initializeSession()
           </div>
           <label class="field-label" for="article-url">기사 URL</label>
           <input id="article-url" v-model="url" class="text-input" type="url" placeholder="https://news.example.com/article" />
+          <p class="field-hint">URL로 분석하면 페이지의 기사 제목을 자동으로 가져옵니다.</p>
           <details class="paste-details">
             <summary>기사 본문을 직접 붙여넣기</summary>
             <textarea v-model="pastedText" class="text-input article-textarea" rows="5" placeholder="URL에서 본문을 가져오기 어렵다면 기사 본문을 붙여넣으세요."></textarea>
+            <label class="field-label" for="article-title">기사 제목 <span>필수</span></label>
+            <input id="article-title" v-model="manualTitle" class="text-input" type="text" placeholder="붙여넣은 기사의 제목을 입력하세요" />
           </details>
-          <label class="field-label" for="article-title">표시 제목 <span>선택</span></label>
-          <input id="article-title" v-model="manualTitle" class="text-input" type="text" placeholder="기사 제목을 입력하세요" />
           <button class="button button-primary button-wide" :disabled="busy || !sessionReady || !sessionId" @click="analyzeArticle">
             <span v-if="busy && !messages.length" class="spinner"></span>
             기사 분석하기 <span aria-hidden="true">→</span>
