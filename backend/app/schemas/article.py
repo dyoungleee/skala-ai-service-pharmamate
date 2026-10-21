@@ -26,6 +26,31 @@ class PharmaTerm(BaseModel):
     aliases: list[str] = Field(description="본문에서 확인한 약어·전체 이름·한국어 동의어")
 
 
+class ManualTermClassification(BaseModel):
+    category: Literal[
+        "Modality", "Drug", "Target", "Biomarker", "Disease", "Clinical Trial",
+        "Clinical Metric", "Regulatory", "Business", "Manufacturing", "Platform",
+        "Diagnostic", "Mechanism", "Technology", "Other",
+    ]
+    reason: str = Field(description="이 용어를 배워야 하는 이유 한 문장")
+    simple_definition: str = Field(description="비전공자를 위한 쉬운 한 문장 정의")
+    article_context: str = Field(description="제공된 기사 문맥에서 용어가 사용된 맥락")
+    aliases: list[str] = Field(default_factory=list, description="확인된 약어·동의어")
+    evidence: str = Field(default="", description="분류 판단에 사용한 기사 원문의 짧은 근거 구절")
+    confidence: Literal["high", "medium", "low"] = Field(
+        default="low", description="용어와 기사 문맥이 해당 분류를 뒷받침하는 확신도"
+    )
+
+
+class ManualTermClassificationModelOutput(ManualTermClassification):
+    """Model output schema that requires evidence and confidence."""
+
+    evidence: str = Field(description="분류 판단에 사용한 기사 원문의 짧은 근거 구절")
+    confidence: Literal["high", "medium", "low"] = Field(
+        description="용어와 기사 문맥이 해당 분류를 뒷받침하는 확신도"
+    )
+
+
 class ArticleAnalysis(BaseModel):
     article_type: Literal[
         "제약·바이오", "보건·정책", "국제", "임상", "규제", "기술/플랫폼", "투자", "기술이전", "파트너십",
@@ -39,3 +64,8 @@ class ArticleAnalysis(BaseModel):
         description="일반 독자에게 낯설고 기사 이해에 필요한 전문 개념. 자동 추출은 최대 5개, 사용자 추가를 포함해 최대 20개입니다.",
     )
     confusing_points: list[str] = Field(description="읽을 때 혼동하기 쉬운 지점 최대 2개")
+    article_questions: list[str] = Field(
+        default_factory=list,
+        max_length=2,
+        description="일반 질문 모드에서 보여줄, 기사 맥락에 근거한 서로 다른 질문 정확히 2개",
+    )

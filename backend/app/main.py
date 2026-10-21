@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from backend.app.api.streaming import sse_event
 from backend.app.core.runtime import PharmaMateRuntime, get_runtime
 from backend.app.db import repository
+from backend.app.schemas.article import PharmaTerm
 from backend.app.schemas.api import (
     ArticleAnalyzeRequest,
     ArticleAnalyzeResponse,
@@ -19,6 +20,7 @@ from backend.app.schemas.api import (
     IndustryIssueSummary,
     MarkSessionArticleReadRequest,
     MarkSessionArticleReadResponse,
+    ManualTermClassifyRequest,
     SaveSessionStudyRecordRequest,
     SaveStudyRecordRequest,
     SaveStudyRecordResponse,
@@ -28,7 +30,7 @@ from backend.app.schemas.api import (
     SessionStudyRecordSummary,
     StudyRecordSummary,
 )
-from backend.app.services.article_analysis import analyze_article
+from backend.app.services.article_analysis import analyze_article, classify_manual_term
 from backend.app.services.article_extraction import article_id_for, load_article
 from backend.app.services.session_service import can_access_session, create_anonymous_session
 
@@ -133,22 +135,43 @@ def analyze_article_endpoint(
         article, metadata = load_article(request.url, request.pasted_text)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    title = (request.title or "").strip() or metadata.get("title") or "기사 원문"
+    subtitle = metadata.get("subtitle", "")
     try:
-        analysis = analyze_article(runtime.article_chain, article)
+        analysis = analyze_article(runtime.article_chain, article, title=title, subtitle=subtitle)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=f"기사 분석을 완료하지 못했습니다 ({type(exc).__name__}).",
         ) from exc
-    title = (request.title or "").strip() or metadata.get("title") or "기사 원문"
     return ArticleAnalyzeResponse(
         article_id=article_id_for(article, metadata.get("source", "")),
         article=article,
         url=metadata.get("source", ""),
         title=title,
+        subtitle=subtitle,
         load_method=metadata.get("load_method", ""),
         analysis=analysis.model_copy(update={"key_terms": analysis.key_terms[:5]}),
     )
+
+
+@app.post("/api/articles/classify-term", response_model=PharmaTerm)
+def classify_manual_term_endpoint(
+    request: ManualTermClassifyRequest,
+    runtime: PharmaMateRuntime = Depends(runtime_dependency),
+) -> PharmaTerm:
+    try:
+        return classify_manual_term(
+            runtime.manual_term_chain,
+            request.term,
+            request.article_context,
+            request.article_type,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"용어 분류를 완료하지 못했습니다 ({type(exc).__name__}).",
+        ) from exc
 
 
 @app.post("/api/chat", response_model=ChatResponse)

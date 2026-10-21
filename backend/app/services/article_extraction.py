@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 def valid_remote_url(url: str) -> bool:
     parsed = urlparse(url)
@@ -27,13 +27,19 @@ def valid_remote_url(url: str) -> bool:
     return True
 
 ARTICLE_BODY_SELECTORS = [
-    '#article-view-content-div', '[itemprop="articleBody"]',
+    '#article-view-content-div',
     '#articleBody', '#article_body', '#article-body',
     '.news-article-body', '.story-body', '.entry-content', '.post-content',
+    '.article-cont', '[itemprop="articleBody"] article', '[itemprop="articleBody"]',
     '.article-view-content', '.article_view_content', '.article-body',
     '.article_body', '.news-view-content', '.article-content', '.article_view', 'article'
 ]
 ARTICLE_IMAGE_CLASS_MARKERS = ("img", "image", "fig", "figure", "caption", "photo")
+ARTICLE_SUBTITLE_MARKER_PATTERN = re.compile(
+    r"\bsub\s*title\b|\bsubheadline\b|\bsub\s*head(?:line)?\b|\bdeck\b|\bdek\b|"
+    r"\b(?:article|news)\s+summary\b|\b(?:summary|summury)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_image_caption_node(node) -> bool:
@@ -73,6 +79,7 @@ ARTICLE_NOISE_SELECTORS = [
     '.recommended', '.latest-news', '.popular-news', '.news-list', '.article-list',
     '.tag-list', '.keyword-list', '.byline', '.reporter', '.share', '.sns',
     '.sidebar', '.widget', '.advertisement', '.ad-container',
+    '.box-listNews', '.adBox', '.infoLine', '.updata-time',
     '[class*="related"]', '[id*="related"]', '[class*="recommend"]',
     '[id*="recommend"]', '[class*="advert"]', '[id*="advert"]',
     '[aria-label*="관련 기사"]'
@@ -91,6 +98,7 @@ ARTICLE_TAIL_HEADINGS = {
 ARTICLE_TAIL_PATTERNS = [
     re.compile(r"저작권자|저작권\s*[:：=]|무단\s*전재|재배포\s*금지|\bcopyright\b|©|ⓒ", re.IGNORECASE),
     re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b"),
+    re.compile(r"^◎\s*공감언론\s*뉴시스\b"),
 ]
 ARTICLE_INLINE_CREDIT_PATTERNS = [
     re.compile(r"(?:^|[\s·|—-])(?:사진|이미지)\s*(?:(?:출처|제공|저작권)\s*)?[:：=]\s*", re.IGNORECASE),
@@ -191,13 +199,146 @@ def _page_title(soup):
     node=soup.find('h1') or soup.find('title')
     return node.get_text(' ',strip=True) if node else ''
 
+
+def _has_subtitle_marker(node) -> bool:
+    values = [node.get("id", ""), node.get("itemprop", "")]
+    classes = node.get("class", [])
+    if isinstance(classes, str):
+        classes = [classes]
+    values.extend(classes)
+    tokenized = []
+    for value in values:
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(value))
+        tokenized.extend(re.findall(r"[a-z0-9]+", spaced.lower()))
+    return bool(ARTICLE_SUBTITLE_MARKER_PATTERN.search(" ".join(tokenized)))
+
+
+def _is_byline_node(node) -> bool:
+    names = [node.get("id", "")]
+    classes = node.get("class", [])
+    if isinstance(classes, str):
+        classes = [classes]
+    names.extend(classes)
+    tokens = " ".join(str(value).lower() for value in names)
+    if re.search(r"byline|reporter|author|writer|journalist|dateline", tokens):
+        return True
+    text = node.get_text(" ", strip=True)
+    return bool(re.search(
+        r"(?:^|\s)[가-힣A-Za-z]{2,12}\s*기자(?:\s|$)|(?:^|\s)기자\s*[:：]|"
+        r"입력\s*[:：]|수정\s*[:：]|발행\s*[:：]",
+        text,
+    ))
+
+
+def _subtitle_text(node, title: str) -> str:
+    if not node or _is_image_caption_node(node) or node.find_parent(["figure", "figcaption"]):
+        return ""
+    fragment = BeautifulSoup(str(node), "html.parser")
+    for caption in fragment.find_all(_is_image_caption_node):
+        if caption.parent is not None:
+            caption.decompose()
+    text = re.sub(r"\s+", " ", fragment.get_text(" ", strip=True)).strip()
+    if len(text) < 8 or len(text) > 500:
+        return ""
+    if re.sub(r"\s+", "", text).casefold() == re.sub(r"\s+", "", title).casefold():
+        return ""
+    return text
+
+
+def _page_subtitle_node(soup, title: str):
+    title_node = soup.find("h1")
+    ordered_nodes = soup.find_all(True)
+    positions = {id(node): index for index, node in enumerate(ordered_nodes)}
+    title_position = positions.get(id(title_node), -1) if title_node else -1
+    body_node = None
+    for selector in ARTICLE_BODY_SELECTORS:
+        body_node = next((
+            node for node in soup.select(selector)
+            if len(_clean_article_node(node)) >= 300
+        ), None)
+        if body_node is not None:
+            break
+
+    def appears_before_body(node) -> bool:
+        if body_node is None:
+            return True
+        node_position = positions.get(id(node), -1)
+        body_position = positions.get(id(body_node), -1)
+        if node is body_node or body_node in node.parents:
+            first_paragraph = body_node.find("p")
+            return first_paragraph is None or node_position <= positions.get(id(first_paragraph), body_position)
+        return node_position < body_position
+
+    for node in ordered_nodes:
+        if not _has_subtitle_marker(node) or _is_image_caption_node(node):
+            continue
+        if node.name in {"nav", "aside", "footer", "script", "style"}:
+            continue
+        if title_node and positions.get(id(node), -1) <= title_position:
+            continue
+        if not appears_before_body(node):
+            continue
+        if node.select_one(", ".join(ARTICLE_BODY_SELECTORS)) is not None:
+            continue
+        if _subtitle_text(node, title):
+            return node
+
+    # An unmarked h2 directly beside the headline is a common publisher deck.
+    # Only inspect the headline's siblings before body text begins; never promote
+    # the first paragraph, which may be the article's real lead.
+    if title_node:
+        for sibling in title_node.next_siblings:
+            if isinstance(sibling, NavigableString):
+                continue
+            if not isinstance(sibling, Tag):
+                continue
+            if _is_image_caption_node(sibling):
+                continue
+            if _is_byline_node(sibling):
+                continue
+            h2_candidate = sibling if sibling.name == "h2" else sibling.find("h2")
+            if h2_candidate and appears_before_body(h2_candidate) and _subtitle_text(h2_candidate, title):
+                return h2_candidate
+            if sibling.select_one(", ".join(ARTICLE_BODY_SELECTORS)) is not None:
+                break
+            if sibling.name in {"p", "h2", "h3", "article"}:
+                break
+            if sibling.get_text(" ", strip=True):
+                break
+    return None
+
+
+def extract_article_document(soup) -> dict[str, str]:
+    """Return separated title, subtitle, and body fields from a publisher page."""
+    title = _page_title(soup)
+    title_node = soup.find("h1")
+    subtitle_node = _page_subtitle_node(soup, title)
+    subtitle = _subtitle_text(subtitle_node, title)
+
+    # Some publishers place the headline and deck inside the same article root.
+    # Remove only those identified nodes, leaving duplicated lead copy untouched.
+    if title_node is not None and title_node.parent is not None:
+        title_node.decompose()
+    if subtitle_node is not None and subtitle_node.parent is not None:
+        subtitle_node.decompose()
+
+    body, method = extract_article_text(soup)
+    # A publisher may duplicate its headline as plain text inside the chosen
+    # body container. Remove only an exact standalone heading at the start.
+    body_lines = body.splitlines()
+    if body_lines and re.sub(r"\s+", "", body_lines[0]).casefold() == re.sub(r"\s+", "", title).casefold():
+        body = "\n".join(body_lines[1:])
+    return {"title": title, "subtitle": subtitle, "body": body, "load_method": method}
+
 def load_article(url: str = "", pasted_text: str = ""):
     url, pasted_text = (url or "").strip(), (pasted_text or "").strip()
     if pasted_text:
         pasted_text = _clean_article_lines(pasted_text.splitlines())
         if len(pasted_text) < 120:
             raise ValueError("기사 본문이 너무 짧습니다. 본문을 충분히 붙여넣어 주세요.")
-        return pasted_text, {"source": url or "직접 입력", "title": "(제목 없음)", "load_method": "manual"}
+        return pasted_text, {
+            "source": url or "직접 입력", "title": "(제목 없음)", "subtitle": "", "load_method": "manual",
+        }
     if not url:
         raise ValueError("기사 URL 또는 기사 본문이 필요합니다.")
     if not valid_remote_url(url):
@@ -211,9 +352,14 @@ def load_article(url: str = "", pasted_text: str = ""):
         if not valid_remote_url(response.url):
             raise ValueError('기사 주소가 허용되지 않는 위치로 연결되었습니다.')
         soup=BeautifulSoup(response.content,'html.parser')
-        text,method=extract_article_text(soup)
-        metadata={'source':url,'title':_page_title(soup),'load_method':method}
-        return text,metadata
+        document = extract_article_document(soup)
+        metadata = {
+            "source": url,
+            "title": document["title"],
+            "subtitle": document["subtitle"],
+            "load_method": document["load_method"],
+        }
+        return document["body"], metadata
     except ValueError:
         raise
     except Exception as exc:

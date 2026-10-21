@@ -14,13 +14,14 @@ from langchain_core.messages import AIMessageChunk
 
 from backend.app.main import app, runtime_dependency
 from backend.app.db import repository
-from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
+from backend.app.schemas.article import ArticleAnalysis, ManualTermClassification, PharmaTerm
 from backend.app.services.recommendations import fallback_recommendations
 from backend.app.retrieval.service import search_study_memory
 
 
 class FakeArticleChain:
     def invoke(self, payload):
+        self.payload = payload
         self.article = payload["article"]
         return ArticleAnalysis(
             article_type="임상",
@@ -33,6 +34,18 @@ class FakeArticleChain:
                 article_context="가상 후보물질의 초기 시험입니다.", aliases=["Phase 1"],
             )],
             confusing_points=[],
+        )
+
+
+class FakeManualTermChain:
+    def invoke(self, payload):
+        self.payload = payload
+        return ManualTermClassification(
+            category="Mechanism",
+            reason="치료 기술이 작동하는 원리를 설명합니다.",
+            simple_definition="표적 단백질이 분해되도록 유도하는 방식입니다.",
+            article_context=payload["article_context"],
+            aliases=[],
         )
 
 
@@ -77,6 +90,7 @@ class FakeGraph:
 class FakeRuntime:
     def __init__(self):
         self.article_chain = FakeArticleChain()
+        self.manual_term_chain = FakeManualTermChain()
         self.agent_graph = FakeGraph()
 
 
@@ -114,15 +128,47 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
 
-    def test_article_analysis_uses_pasted_fixture_and_returns_id(self):
+    def test_article_analysis_returns_title_subtitle_and_body_fields(self):
         body = "가상 임상 자료입니다. 안전성과 내약성을 평가하기 위한 초기 시험을 시작했습니다. " * 10
-        response = self.client.post("/api/articles/analyze", json={"pasted_text": body})
+        response = self.client.post("/api/articles/analyze", json={
+            "pasted_text": body,
+            "title": "사용자가 입력한 기사 제목",
+        })
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["analysis"]["article_type"], "임상")
         self.assertEqual(payload["load_method"], "manual")
         self.assertTrue(payload["article_id"])
+        self.assertEqual(payload["title"], "사용자가 입력한 기사 제목")
+        self.assertEqual(payload["subtitle"], "")
+        self.assertEqual(payload["body"], body.strip())
+        self.assertNotIn("article", payload)
+        self.assertEqual(len(payload["analysis"]["article_questions"]), 2)
         self.assertEqual(self.runtime.article_chain.article, body.strip())
+        self.assertEqual(self.runtime.article_chain.payload["title"], "사용자가 입력한 기사 제목")
+        self.assertEqual(self.runtime.article_chain.payload["subtitle"], "")
+
+    def test_manual_term_classification_endpoint_returns_category_and_definition(self):
+        response = self.client.post("/api/articles/classify-term", json={
+            "term": "단백질 분해 유도",
+            "article_context": "후보물질은 단백질 분해 유도 기술을 활용한다.",
+            "article_type": "기술/플랫폼",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["category"], "Mechanism")
+        self.assertEqual(payload["article_context"], "후보물질은 단백질 분해 유도 기술을 활용한다.")
+        self.assertTrue(payload["simple_definition"])
+
+    def test_manual_term_classification_rejects_whitespace_only_term(self):
+        response = self.client.post("/api/articles/classify-term", json={
+            "term": "   ",
+            "article_context": "기사 문맥입니다.",
+            "article_type": "임상",
+        })
+
+        self.assertEqual(response.status_code, 422)
 
     def test_empty_article_request_returns_validation_error(self):
         response = self.client.post("/api/articles/analyze", json={})
@@ -213,12 +259,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("검증된 답변", body)
         self.assertEqual(self.runtime.agent_graph.payload["owner_id"], session_id)
-        self.assertEqual(self.runtime.agent_graph.payload["article"], analyzed["article"])
+        self.assertEqual(self.runtime.agent_graph.payload["article"], analyzed["body"])
 
         restored = self.client.get(f"/api/sessions/{session_id}", headers=headers)
         self.assertEqual(restored.status_code, 200)
         snapshot = restored.json()
         self.assertEqual(snapshot["article"]["article_id"], analyzed["article_id"])
+        self.assertEqual(snapshot["article"]["analysis"]["article_questions"], analyzed["analysis"]["article_questions"])
         self.assertEqual(len(snapshot["turns"]), 1)
         self.assertEqual(snapshot["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
 

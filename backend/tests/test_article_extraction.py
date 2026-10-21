@@ -1,13 +1,160 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock, patch
 
 from bs4 import BeautifulSoup
 
-from backend.app.services.article_extraction import extract_article_text, load_article
+from backend.app.services.article_extraction import (
+    extract_article_document,
+    extract_article_text,
+    load_article,
+)
 
 
 class ArticleExtractionTests(unittest.TestCase):
+    def test_newsis_article_body_excludes_header_deck_caption_and_footer(self):
+        title = '셀비온 "전립선암 치료제, 국내 3상 IND 승인"'
+        subtitle = "전이성 거세저항성 전립선암 환자 대상"
+        lead = (
+            "[서울=뉴시스] 기자 = 전이성 거세저항성 전립선암 환자 대상 연구를 시작한다. "
+            "이 문장은 기사 본문의 실제 리드문으로 남아야 한다. "
+        ) * 4
+        followup = "회사는 임상시험 계획과 다음 개발 단계를 구체적으로 설명했다. " * 6
+        html = f"""
+        <html><head><meta property="og:title" content='{title}'></head><body>
+          <div itemprop="articleBody">
+            <div class="top"><h1>{title}</h1></div>
+            <div class="infoLine"><span>등록 2026.09.29 09:33:40</span>
+              <a>구글에서 선호하는 매체로 추가</a></div>
+            <div class="viewer"><article>
+              <div class="summury"><h2>{subtitle}</h2></div>
+              <div class="plain-headline">{title}</div>
+              <div class="thumCont"><img alt="기사 사진">
+                <p class="photojournal">사진 설명: 기사 본문이 아닌 이미지 설명입니다.
+                  <a>[email protected]</a></p></div>
+              <p>{lead}</p><p>{followup}</p>
+              <div class="box-listNews">이시간 핫 뉴스 추천 문구</div>
+              <p>◎공감언론 뉴시스</p><p>[email protected]</p>
+            </article></div>
+          </div>
+        </body></html>
+        """
+
+        document = extract_article_document(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(document["title"], title)
+        self.assertEqual(document["subtitle"], subtitle)
+        self.assertTrue(document["body"].startswith("[서울=뉴시스] 기자 ="))
+        self.assertIn("이 문장은 기사 본문의 실제 리드문", document["body"])
+        self.assertIn("다음 개발 단계", document["body"])
+        for noise in (title, "등록 2026", "구글에서", "사진 설명", "[email protected]", "핫 뉴스", "공감언론"):
+            self.assertNotIn(noise, document["body"])
+
+    def test_newsis_article_cont_keeps_real_paragraphs_after_photo(self):
+        body = "실제 본문 문장에는 후보물질의 연구 계획과 후속 절차가 서술되어 있다. " * 8
+        html = f"""
+        <html><body><article class="article-wrap">
+          <header class="article-header"><h1>기사 제목</h1><p>수정 2026/09/29 10:14:24</p></header>
+          <div class="article-cont">
+            <div class="box-summury"><h2>이 기사의 부제목입니다</h2></div>
+            <div class="box-figure"><figure><img src="photo.jpg">
+              <figcaption><p>기사와 관련된 사진 설명입니다.</p></figcaption></figure></div>
+            <p>{body}</p><p>이 문단은 기사 본문 끝까지 보존되어야 합니다.</p>
+            <div class="box-listNews">기사와 무관한 추천 기사</div>
+            <p>◎공감언론 뉴시스</p>
+          </div>
+        </article></body></html>
+        """
+
+        document = extract_article_document(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(document["subtitle"], "이 기사의 부제목입니다")
+        self.assertTrue(document["body"].startswith("실제 본문 문장"))
+        self.assertIn("본문 끝까지 보존", document["body"])
+        self.assertNotIn("사진 설명", document["body"])
+        self.assertNotIn("추천 기사", document["body"])
+        self.assertNotIn("공감언론", document["body"])
+
+    def test_extracts_subtitle_separately_and_keeps_matching_lead_in_body(self):
+        subtitle = "신약 후보물질의 임상 3상에서 주요 평가 지표를 충족했다"
+        repeated_body = (subtitle + ". 실제 본문 문장입니다. ") * 8
+        html = f"""
+        <html><head><meta property="og:title" content="가상 신약 임상 결과" /></head><body>
+          <header><h1>가상 신약 임상 결과</h1>
+            <p class="article-deck">{subtitle}</p><div class="byline">홍길동 기자</div>
+          </header>
+          <div id="articleBody"><p>{repeated_body}</p>
+            <p>후속 문단은 실제 기사 본문이며 그대로 보존합니다. {repeated_body}</p>
+          </div>
+        </body></html>
+        """
+
+        document = extract_article_document(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(document["title"], "가상 신약 임상 결과")
+        self.assertEqual(document["subtitle"], subtitle)
+        self.assertIn("body", document)
+        self.assertNotIn("가상 신약 임상 결과", document["body"])
+        self.assertGreaterEqual(document["body"].count(subtitle), 8)
+        self.assertIn("후속 문단은 실제 기사 본문", document["body"])
+
+    def test_title_adjacent_h2_is_subtitle_but_unmarked_first_paragraph_is_lead(self):
+        body_text = "실제 첫 문단 리드문입니다. " * 12
+        html_with_deck = f"""
+        <html><body><div class="headline"><h1>기사 제목</h1><h2>기업 핵심 요약 부제목입니다</h2></div>
+          <div id="articleBody"><p>{body_text}</p><p>후속 본문 설명입니다. {body_text}</p></div>
+        </body></html>
+        """
+        html_with_lead = f"""
+        <html><body><h1>기사 제목</h1><div class="byline">홍길동 기자</div>
+          <div class="article-body"><p>{body_text}</p><p>후속 본문 설명입니다. {body_text}</p></div>
+        </body></html>
+        """
+
+        deck_document = extract_article_document(BeautifulSoup(html_with_deck, "html.parser"))
+        lead_document = extract_article_document(BeautifulSoup(html_with_lead, "html.parser"))
+
+        self.assertEqual(deck_document["subtitle"], "기업 핵심 요약 부제목입니다")
+        self.assertNotIn("기업 핵심 요약 부제목입니다", deck_document["body"])
+        self.assertEqual(lead_document["subtitle"], "")
+        self.assertIn("실제 첫 문단 리드문입니다.", lead_document["body"])
+
+    def test_url_loading_returns_subtitle_in_metadata_and_body_separately(self):
+        subtitle = "기업은 신약 후보물질의 임상 개발을 이어간다"
+        body_text = "본문에서 실제로 확인되는 개발 계획과 임상 내용입니다. " * 12
+        html = f"""
+        <html><body><h1>기사 제목</h1><p class="subtitle">{subtitle}</p>
+          <div id="articleBody"><p>{body_text}</p></div>
+        </body></html>
+        """
+        response = Mock()
+        response.content = html.encode("utf-8")
+        response.url = "https://example.com/article"
+        response.raise_for_status.return_value = None
+
+        with patch("backend.app.services.article_extraction.requests.get", return_value=response):
+            body, metadata = load_article(url="https://example.com/article")
+
+        self.assertEqual(metadata["title"], "기사 제목")
+        self.assertEqual(metadata["subtitle"], subtitle)
+        self.assertIn("본문에서 실제로 확인되는 개발 계획", body)
+        self.assertNotIn(subtitle, body)
+
+    def test_image_caption_marked_like_subtitle_is_not_extracted(self):
+        body_text = "기사 본문에서 확인된 실제 임상 결과와 개발 계획입니다. " * 12
+        html = f"""
+        <html><body><h1>기사 제목</h1>
+          <figure><figcaption class="article-subtitle">이미지 캡션은 부제목이 아닙니다.</figcaption></figure>
+          <div id="articleBody"><p>{body_text}</p></div>
+        </body></html>
+        """
+
+        document = extract_article_document(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(document["subtitle"], "")
+        self.assertNotIn("이미지 캡션은 부제목이 아닙니다.", document["body"])
+
     def test_extracts_article_region_and_removes_related_article_copy(self):
         article_body = "제약 기업은 가상 후보물질의 임상 1상에서 안전성과 내약성을 살펴볼 계획입니다. " * 12
         related_body = "다른 기사 목록에 있는 별개의 기업과 후보물질 소식입니다. " * 12

@@ -1,7 +1,7 @@
 """Request and response models for the local PharmaMate API."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from backend.app.schemas.article import ArticleAnalysis, PharmaTerm
 from backend.app.services.recommendations import LearningQuestion
@@ -13,11 +13,26 @@ class ArticleAnalyzeRequest(BaseModel):
     title: str = Field(default="", max_length=300)
 
 
+class ManualTermClassifyRequest(BaseModel):
+    term: str = Field(min_length=2, max_length=70)
+    article_context: str = Field(min_length=1, max_length=1000)
+    article_type: str = Field(default="", max_length=80)
+
+    @field_validator("term", "article_context", mode="before")
+    @classmethod
+    def trim_text(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+
 class ArticleAnalyzeResponse(BaseModel):
     article_id: str
-    article: str
     url: str
     title: str
+    subtitle: str = ""
+    article: str = Field(
+        validation_alias=AliasChoices("body", "article"),
+        serialization_alias="body",
+    )
     load_method: str
     analysis: ArticleAnalysis
 

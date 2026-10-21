@@ -13,7 +13,10 @@ from backend.app.agents.graph import build_agent_graph
 from backend.app.core.config import ProjectSettings, load_settings
 from backend.app.db import repository
 from backend.app.retrieval.service import search_study_memory
-from backend.app.services.article_analysis import build_article_analysis_chain
+from backend.app.services.article_analysis import (
+    build_article_analysis_chain,
+    build_manual_term_classification_chain,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,7 @@ class PharmaMateRuntime:
     settings: ProjectSettings
     model: Any
     article_chain: Any
+    manual_term_chain: Any
     agent_graph: Any
 
 
@@ -57,5 +61,6 @@ def get_runtime() -> PharmaMateRuntime:
         settings=settings,
         model=model,
         article_chain=build_article_analysis_chain(model),
+        manual_term_chain=build_manual_term_classification_chain(model),
         agent_graph=graph,
     )
