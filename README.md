@@ -137,6 +137,9 @@ python eval/compare_answers.py --all --baseline-ref 9814fc2
 - [브라우저 E2E 검증](docs/experiments/F6_4_browser_e2e.md)
 - [세션 복원 및 접근 범위](docs/experiments/F7_1_sessions.md)
 - [단계별 학습 화면과 원문 용어 하이라이트](docs/experiments/F9_1_learning_flow_ui.md)
+- [직접 추가 용어 분류](docs/experiments/F9_13_manual_term_classification.md)
+- [넓은 화면 학습 레이아웃](docs/experiments/F9_14_wide_learning_layouts.md)
+- [기사 부제목 분리 및 분석 문맥 반영](docs/experiments/F9_15_article_subtitle_separation.md)
 - [전체 평가 결과](docs/experiments/F4_overall_evaluation.md)
 - [3.0 구현 결과 발표 자료](outputs/PharmaMate_3.0_Implementation_Results_F8.pptx)
 
