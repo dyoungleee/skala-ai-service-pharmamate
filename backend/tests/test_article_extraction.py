@@ -76,6 +76,23 @@ class ArticleExtractionTests(unittest.TestCase):
         self.assertNotIn("추천 기사", document["body"])
         self.assertNotIn("공감언론", document["body"])
 
+    def test_preserves_visible_spacing_between_article_paragraphs(self):
+        first = "첫 번째 문단은 후보물질의 개발 배경을 설명합니다. " * 8
+        second = "두 번째 문단은 임상시험의 다음 단계를 설명합니다. " * 8
+        html = f"""
+        <html><body><div id="articleBody">
+          <p>{first}</p><p>{second}</p>
+        </div></body></html>
+        """
+
+        article, method = extract_article_text(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(method, "article_selector")
+        self.assertIn(
+            f"{' '.join(first.split())}\n\n{' '.join(second.split())}",
+            article,
+        )
+
     def test_extracts_subtitle_separately_and_keeps_matching_lead_in_body(self):
         subtitle = "신약 후보물질의 임상 3상에서 주요 평가 지표를 충족했다"
         repeated_body = (subtitle + ". 실제 본문 문장입니다. ") * 8

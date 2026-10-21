@@ -112,19 +112,34 @@ ARTICLE_IMAGE_CREDIT_PATTERNS = [
     re.compile(r"^(?:photo|image)\s*(?:(?:credit|source|by|courtesy\s+of)\s*)?[:：=]\s*.+$", re.IGNORECASE),
     re.compile(r"^(?:©|ⓒ|copyright(?:\s*©)?)\s*.+$", re.IGNORECASE),
 ]
+ARTICLE_PARAGRAPH_BREAK = "__PHARMAMATE_ARTICLE_PARAGRAPH_BREAK__"
 
 
 def _clean_article_lines(raw_lines) -> str:
     lines = []
+    pending_paragraph_break = False
+    last_content = ""
     for raw_line in raw_lines:
+        if str(raw_line).strip() == ARTICLE_PARAGRAPH_BREAK:
+            pending_paragraph_break = bool(lines)
+            continue
         line = re.sub(r"\s+", " ", str(raw_line)).strip()
         if not line:
+            pending_paragraph_break = bool(lines)
             continue
         if any(pattern.match(line) for pattern in ARTICLE_IMAGE_CREDIT_PATTERNS):
             continue
-        if not lines or line != lines[-1]:
-            lines.append(line)
-    return "\n".join(_trim_article_tail(lines))
+        if line == last_content:
+            continue
+        if pending_paragraph_break and lines and lines[-1] != "":
+            lines.append("")
+        lines.append(line)
+        last_content = line
+        pending_paragraph_break = False
+    trimmed = _trim_article_tail(lines)
+    while trimmed and not trimmed[-1]:
+        trimmed.pop()
+    return "\n".join(trimmed)
 
 
 def _trim_article_tail(lines: list[str]) -> list[str]:
@@ -155,6 +170,11 @@ def _clean_article_node(node) -> str:
     for caption in fragment.find_all(_is_image_caption_node):
         if caption.parent is not None:
             caption.decompose()
+    # Preserve publisher paragraph boundaries for the reading view. A marker is
+    # used because BeautifulSoup's get_text() otherwise flattens adjacent <p>
+    # elements into indistinguishable single line breaks.
+    for block in fragment.find_all(["p", "blockquote", "h2", "h3", "h4"]):
+        block.insert_after(NavigableString(f"\n{ARTICLE_PARAGRAPH_BREAK}\n"))
     return _clean_article_lines(fragment.get_text('\n', strip=True).splitlines())
 
 def _jsonld_article_body(value):
