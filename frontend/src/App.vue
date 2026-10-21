@@ -892,7 +892,7 @@ initializeSession()
             <div><p class="eyebrow">02 · AI TUTOR</p><h2 id="tutor-step-title">질문하고 학습하기</h2></div>
             <button class="icon-button" title="새 학습 세션" :disabled="busy || !sessionReady" @click="startNewSession">＋</button>
           </div>
-          <p class="card-intro">{{ articleResult ? `「${articleResult.title}」와 선택한 용어를 질문의 참고 문맥으로 사용합니다.` : '기사 없이도 제약·바이오 개념을 자유롭게 질문할 수 있습니다.' }}</p>
+          <p v-if="!articleResult" class="card-intro">기사 없이도 제약·바이오 개념을 자유롭게 질문할 수 있습니다.</p>
           <div class="tutor-controls">
             <label class="field-label" for="tutor-term-select">학습할 용어</label>
             <select id="tutor-term-select" class="text-input" :value="tutorTerm"
