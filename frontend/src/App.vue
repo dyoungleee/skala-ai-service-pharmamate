@@ -42,6 +42,19 @@ let activeController = null
 const SESSION_STORAGE_KEY = 'pharmamate.sessions.v1'
 const STREAM_IDLE_TIMEOUT_MS = Number(import.meta.env.VITE_STREAM_IDLE_TIMEOUT_MS) || 120_000
 
+function renderAnswerText(value) {
+  const escaped = String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character])
+  return escaped.replace(/(?:\\?\*\\?\*)([^\n]+?)(?:\\?\*\\?\*)/g, (_match, text) => (
+    `<strong>${text.trim()}</strong>`
+  ))
+}
+
 const steps = [
   { id: 'article', label: '기사 읽기', hint: '원문과 브리핑' },
   { id: 'tutor', label: 'AI Tutor', hint: '질문하고 학습하기' },
@@ -1234,7 +1247,7 @@ initializeSession()
                       {{ message.validationStatus === 'pass' ? '근거 확인' : '근거 부족' }}<template v-if="message.validationRetries"> · 수정 {{ message.validationRetries }}회</template>
                     </span>
                   </div>
-                  <p class="answer-text">{{ message.content }}</p>
+                  <p class="answer-text" v-html="renderAnswerText(message.content)"></p>
                   <div v-if="message.sources?.length" class="source-list">
                     <span class="mini-label">참고 자료</span>
                     <a v-for="(source, sourceIndex) in message.sources" :key="sourceIndex"
