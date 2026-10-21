@@ -101,7 +101,7 @@ class AgentValidationFlowTests(unittest.TestCase):
             def search(self, **_kwargs):
                 rendezvous.wait()
                 return {"results": [{
-                    "title": "가상 최신 ADC 시험", "url": "https://example.invalid/adc",
+                    "title": "가상 최신 ADC 시험", "url": "https://clinicaltrials.gov/study/NCT00000000",
                     "content": "합성 fixture: 최신 시험은 진행 중입니다.",
                 }]}
 
@@ -119,6 +119,60 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertIn("합성 메모", result["memory"])
         self.assertIn("가상 최신 ADC 시험", result["web"])
         self.assertEqual(len(result["sources"]), 2)
+
+    def test_care_question_gets_attributed_reference_even_without_search_client(self):
+        graph = build_graph(["일반적으로 SoC는 표준 치료를 뜻합니다. 이 시험의 구체적 구성은 기사만으로 확인할 수 없습니다."])
+        result = graph.invoke({"question": "BSC·SoC의 구체적인 구성은 무엇인가요?", "article": "시험은 BSC·SoC를 사용한다."})
+        self.assertEqual(result["route"], "web")
+        self.assertIn("NCI Dictionary", result["web"])
+        self.assertEqual(len(result["sources"]), 2)
+
+    def test_general_care_definition_uses_curated_reference_without_paid_search(self):
+        class Search:
+            def search(self, **_kwargs):
+                raise AssertionError("일반 개념에 외부 검색을 호출하면 안 됩니다")
+
+        graph = build_graph(["SoC는 널리 쓰이는 표준 치료입니다."], search_client=Search())
+        result = graph.invoke({"question": "SoC는 무슨 뜻이야?", "article": ""})
+        self.assertEqual(result["route"], "web")
+        self.assertEqual(result["web_searches"], 0)
+        self.assertEqual(len(result["sources"]), 2)
+
+    def test_insufficient_answer_fetches_new_evidence_before_second_answer(self):
+        class Search:
+            def __init__(self):
+                self.queries = []
+
+            def search(self, **kwargs):
+                self.queries.append(kwargs["query"])
+                return {"results": [{"title": "Trial record", "url": "https://clinicaltrials.gov/study/NCT00000000", "content": "시험 설계 정보"}]}
+
+        search = Search()
+        calls = 0
+
+        def judge(_payload):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return AnswerValidation(status="insufficient_evidence", missing_evidence_query="trial protocol BSC SoC")
+            return AnswerValidation(status="pass")
+
+        graph = build_graph(["초안", "검색 근거를 반영한 답변"], RunnableLambda(judge), search_client=search)
+        result = graph.invoke({"question": "시험의 치료 내용은?", "article": "시험을 계획했다."})
+        self.assertEqual(search.queries, ["trial protocol BSC SoC"])
+        self.assertEqual(result["answer_attempts"], 2)
+        self.assertEqual(result["answer"], "검색 근거를 반영한 답변")
+
+    def test_supported_partial_answer_survives_failed_validation(self):
+        judge = RunnableLambda(lambda _payload: AnswerValidation(
+            status="insufficient_evidence",
+            supported_answer="일반적으로 SoC는 해당 질환에서 널리 쓰이는 치료입니다. 이 시험의 구체적 약물 조합은 확인되지 않았습니다.",
+        ))
+        graph = build_graph(["시험 약물 조합을 단정한 답변"], judge)
+        result = graph.invoke({"question": "이 시험의 SoC 구성은?", "article": "SoC를 사용한다."})
+        self.assertEqual(result["answer_attempts"], 1)
+        self.assertIn("널리 쓰이는 치료", result["answer"])
+        self.assertIn("확인되지 않았습니다", result["answer"])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,12 @@ class AnswerValidation(BaseModel):
     feedback: str = Field(
         default="", description="답변 재작성 시 제거·수정할 내용을 한국어로 안내"
     )
+    supported_answer: str = Field(
+        default="", description="검증 가능한 설명만 보존한 부분 답변. 불확실한 세부사항은 확인 불가로 구분"
+    )
+    missing_evidence_query: str = Field(
+        default="", description="핵심 근거가 부족한 경우 한 번 더 검색할 구체적 검색어. 답변에서 추측한 수치나 사실은 넣지 않음"
+    )
 
 
 _VALIDATION_PROMPT = ChatPromptTemplate.from_messages([
@@ -34,6 +40,8 @@ _VALIDATION_PROMPT = ChatPromptTemplate.from_messages([
 - 시험의 목적이나 설계가 안전성·유효성을 평가하는 것이라는 사실은 실제 결과가 아닙니다. 결과가 보고되지 않았다면 안전성·내약성·유효성이 확인 또는 입증됐다고 쓰지 않습니다.
 - 자료의 회사 주장·전망을 검증된 사실로 취급하지 않습니다.
 - 근거가 답변의 핵심 주장을 뒷받침하고, 필요한 구체 주장에 모순이 없을 때만 `pass`입니다.
+- 답변의 각 사실 주장을 개별적으로 확인하세요. 일부 주장만 근거가 없으면 나머지 검증된 설명을 `supported_answer`에 간결하게 남기고, 불확실한 부분만 확인 불가라고 적으세요. `supported_answer`에는 원문에 없던 새 사실을 만들지 마세요.
+- 질문의 핵심 근거가 빠졌으면 `missing_evidence_query`에 그 근거를 찾기 위한 검색어를 쓰세요. 생성 답변에만 있는 수치나 주장으로 검색어를 만들지 마세요.
 - `feedback`은 재작성 모델이 그대로 적용할 수 있는 짧은 한국어 지침으로 작성합니다."""),
     ("human", """[질문]
 {question}
@@ -72,7 +80,9 @@ _POSITIVE_OUTCOME = re.compile(
     r"was safe|well tolerated|demonstrated efficacy|improved survival))",
     re.IGNORECASE,
 )
-_GENERAL_QUESTION = re.compile(r"(?:무엇|뭐|뜻|개념|원리|기전|메커니즘|작동|어떻게|차이|달라|설명)")
+_GENERAL_QUESTION = re.compile(
+    r"(?:무엇|뭐|뜻|개념|원리|기전|메커니즘|작동|어떻게|차이|달라|설명|비유|예시|예를\s*들|쉽게\s*설명)"
+)
 _TIME_SENSITIVE_QUESTION = re.compile(r"(?:최근|현재|최신|오늘|승인|허가|임상|투여|용량|부작용|효과|효능|성공률|생존율|반응률|시장|가격|비용|투자)")
 _HIGH_RISK_GENERAL_CLAIM = re.compile(r"(?:임상|승인|허가|투여|용량|부작용|안전성|유효성|효능|성공률|생존율|반응률|시장|가격|비용|투자|매출|최근|현재|판매)")
 
@@ -153,6 +163,9 @@ def validate_answer(judge: Any, *, question: str, answer: str, evidence: str,
         validated["status"] = "pass"
         validated["unsupported_claims"] = []
         validated["feedback"] = "안정적인 일반 개념 설명으로 분류해 출처 부재만으로 차단하지 않았습니다."
+    safe = validated["supported_answer"].strip()
+    if safe and (unsupported_numeric_markers(safe, evidence) or unsupported_outcome_claim(safe, evidence)):
+        validated["supported_answer"] = ""
     return validated
 
 

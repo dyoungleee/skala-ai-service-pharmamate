@@ -101,6 +101,28 @@ class ValidatorTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "pass")
 
+    def test_labeled_analogy_can_pass_when_article_does_not_explain_the_term(self):
+        answer = (
+            "일반 배경지식 비유: 이 용어는 열쇠와 자물쇠처럼 필요한 대상에 맞춰 작동하는 것으로 생각할 수 있습니다. "
+            "실제 생물학적 과정은 비유보다 복잡합니다."
+        )
+        result = validate_answer(
+            FakeJudge(AnswerValidation(status="insufficient_evidence")),
+            question="이 용어를 일상적인 예로 쉽게 비유해줘.",
+            answer=answer,
+            evidence="기사는 이 용어를 언급하지만 개념 설명은 제공하지 않습니다.",
+        )
+        self.assertEqual(result["status"], "pass")
+
+    def test_analogy_request_still_rejects_unsupported_numeric_claims(self):
+        result = validate_answer(
+            FakeJudge(AnswerValidation(status="pass")),
+            question="이 용어를 일상적인 예로 쉽게 비유해줘.",
+            answer="일반 배경지식 비유: 이 치료는 성공률 87%인 자물쇠 열쇠와 같습니다.",
+            evidence="",
+        )
+        self.assertEqual(result["status"], "revise")
+
     def test_general_question_does_not_allow_numeric_claim_without_evidence(self):
         result = validate_answer(
             FakeJudge(AnswerValidation(status="pass")),
@@ -108,6 +130,16 @@ class ValidatorTests(unittest.TestCase):
             answer="임상 성공률은 87%입니다.", evidence="",
         )
         self.assertEqual(result["status"], "revise")
+
+    def test_partial_answer_with_unsupported_number_is_not_reused(self):
+        result = validate_answer(
+            FakeJudge(AnswerValidation(
+                status="insufficient_evidence",
+                supported_answer="표준 치료의 성공률은 87%입니다.",
+            )),
+            question="표준 치료 결과는?", answer="결과는 확인되지 않습니다.", evidence="표준 치료를 계획했다.",
+        )
+        self.assertEqual(result["supported_answer"], "")
 
 
 if __name__ == "__main__":
