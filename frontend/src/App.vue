@@ -1473,7 +1473,6 @@ initializeSession()
             <div class="record-note-heading">
               <div>
                 <span class="mini-label">저장된 학습 메모</span>
-                <h3>{{ selectedStudyRecord.term_name }} 학습 메모</h3>
               </div>
               <span class="record-date">{{ formatRecordDate(selectedStudyRecord.updated_at) }}</span>
             </div>
