@@ -94,7 +94,7 @@ const selectedTutorQAs = computed(() => {
     if (!answerMessage.relatedToSelected && !questionMentionsTerm(questionMessage.content, selectedTutorTerm.value)) continue
     conversations.push({ question: questionMessage.content, answer: answerMessage.content })
   }
-  return conversations.slice(-8)
+  return conversations
 })
 const easyCategoryDescriptions = {
   Other: '기사에서 직접 선택한 용어예요. AI Tutor에서 뜻과 중요성을 확인해 보세요.',

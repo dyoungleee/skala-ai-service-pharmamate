@@ -452,6 +452,63 @@ print(json.dumps(response.json(), ensure_ascii=False))
             ).fetchone()["note"]
         self.assertTrue(stored_note)
 
+    def test_saving_updated_memo_keeps_previous_and_adds_new_chat_qa(self):
+        session = self.client.post("/api/sessions").json()
+        session_id = session["session_id"]
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        article = self.client.post("/api/articles/analyze", json={
+            "pasted_text": "가상 기사에서 임상 1상 계획을 설명합니다. " * 10,
+        }).json()
+        self.client.put(
+            f"/api/sessions/{session_id}/article", headers=headers,
+            json={"article": article, "selected_term_key": "임상 1상"},
+        )
+        term = article["analysis"]["key_terms"][0]
+        first_question = "임상 1상에서는 무엇을 평가하나요?"
+        second_question = "임상 1상 결과는 다음 단계에 어떻게 이어지나요?"
+
+        for question in (first_question,):
+            with self.client.stream(
+                "POST", f"/api/sessions/{session_id}/chat/stream", headers=headers,
+                json={"question": question, "term": "임상 1상"},
+            ) as response:
+                list(response.iter_text())
+
+        initial_note = (
+            "한 줄 개념\n사람 대상 초기 평가 단계입니다.\n\n"
+            "헷갈렸던 부분 Q&A\n"
+            f"Q. {first_question}\nA. 검증된 답변을 조각으로 전달합니다.\n\n"
+            "기사에서 중요한 이유\n가상 후보물질의 초기 시험입니다.\n\n"
+            "기억할 점\n안전성을 우선 확인합니다."
+        )
+        self.client.post(
+            f"/api/sessions/{session_id}/study-records", headers=headers,
+            json={"term": term, "note": initial_note},
+        )
+
+        with self.client.stream(
+            "POST", f"/api/sessions/{session_id}/chat/stream", headers=headers,
+            json={"question": second_question, "term": "임상 1상"},
+        ) as response:
+            list(response.iter_text())
+
+        updated_note = initial_note.replace(
+            "기사에서 중요한 이유",
+            f"Q. {second_question}\nA. 검증된 답변을 조각으로 전달합니다.\n\n기사에서 중요한 이유",
+        )
+        saved = self.client.post(
+            f"/api/sessions/{session_id}/study-records", headers=headers,
+            json={"term": term, "note": updated_note},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["new_questions"], 1)
+        record = self.client.get(
+            f"/api/sessions/{session_id}/study-records", headers=headers,
+        ).json()[0]
+        self.assertIn(first_question, record["note"])
+        self.assertIn(second_question, record["note"])
+        self.assertEqual(record["qa_count"], 2)
+
     def test_session_study_record_without_questions_uses_term_summary_format(self):
         session = self.client.post("/api/sessions").json()
         session_id = session["session_id"]
