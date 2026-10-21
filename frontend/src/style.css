@@ -173,14 +173,15 @@ a { color: inherit; }
 .term-highlight-new { background: #fde68a; }
 .term-highlight-known { background: #bbf7d0; }
 
-.chat-card { padding: 22px 22px 16px; }
+.chat-card { display: flex; flex-direction: column; height: clamp(520px, calc(100vh - 280px), 760px); min-height: 0; padding: 22px 22px 16px; }
+.chat-card > .section-heading { flex: 0 0 auto; }
 .tutor-controls { display: grid; gap: 6px; margin: 0 0 8px; }
 .tutor-controls .field-label { margin: 0; }
 .tutor-controls #tutor-term-select { appearance: none; padding-right: 34px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%237b8790' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; background-size: 12px; }
 .thread-hint { color: #97a4aa; font-size: 9px; line-height: 1.5; }
 .card-intro { margin: -10px 0 14px; color: #839098; font-size: 11px; }
-.chat-panel { min-height: 400px; max-height: 610px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 10px 2px 20px; scrollbar-color: #d8e0e2 transparent; scrollbar-width: thin; }
-.empty-chat { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 355px; text-align: center; }
+.chat-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; padding: 10px 2px 20px; scrollbar-color: #d8e0e2 transparent; scrollbar-width: thin; }
+.empty-chat { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 0; text-align: center; }
 .empty-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 14px; color: var(--green); background: #edf6f1; font-size: 25px; }
 .empty-chat strong { margin-top: 15px; color: #314957; font-size: 14px; }
 .empty-chat p { margin: 6px 0 18px; color: #89959d; font-size: 11px; }
@@ -219,8 +220,8 @@ a { color: inherit; }
 .live-status { display: flex; align-items: center; gap: 8px; padding: 8px 4px 3px 34px; color: #768790; font-size: 10px; }
 .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: #61aa8a; animation: pulse 1.2s ease infinite; }
 @keyframes pulse { 50% { opacity: .35; box-shadow: 0 0 0 4px #d8eee2; } }
-.composer { border: 1px solid #dfe6e7; border-radius: 10px; background: #fff; padding: 9px 10px 7px; }
-.composer textarea { width: 100%; resize: vertical; min-height: 48px; border: 0; outline: none; padding: 4px; color: var(--ink); font-size: 12px; line-height: 1.6; }
+.composer { flex: 0 0 auto; border: 1px solid #dfe6e7; border-radius: 10px; background: #fff; padding: 9px 10px 7px; }
+.composer textarea { width: 100%; resize: none; min-height: 48px; max-height: 120px; overflow-y: auto; border: 0; outline: none; padding: 4px; color: var(--ink); font-size: 12px; line-height: 1.6; }
 .composer textarea:focus { border: 0; box-shadow: none; }
 .composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 1px 0 4px; color: #9aa5aa; font-size: 9px; }
 .composer-footer > div { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -275,7 +276,8 @@ a { color: inherit; }
   .app-shell { width: min(100% - 36px, 1200px); }
   .workspace-grid { grid-template-columns: minmax(0, 1fr); }
   .hero-orbit { margin-right: 12px; }
-  .chat-panel { min-height: 340px; }
+  .chat-card { height: clamp(500px, calc(100vh - 220px), 700px); }
+  .chat-panel { min-height: 0; }
 }
 
 @media (max-width: 820px) {
@@ -312,8 +314,8 @@ a { color: inherit; }
   .column-stack { gap: 12px; }
   .card { padding: 17px; border-radius: 12px; }
   .chat-card { padding: 17px 15px 13px; }
-  .chat-panel { min-height: 300px; max-height: 58vh; }
-  .empty-chat { min-height: 270px; }
+  .chat-card { height: min(680px, calc(100svh - 150px)); min-height: 440px; }
+  .chat-panel { min-height: 0; max-height: none; }
   .page-footer { flex-direction: column; }
   .recommendation-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
 }
