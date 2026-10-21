@@ -33,6 +33,28 @@ ARTICLE_BODY_SELECTORS = [
     '.article-view-content', '.article_view_content', '.article-body',
     '.article_body', '.news-view-content', '.article-content', '.article_view', 'article'
 ]
+ARTICLE_IMAGE_CAPTION_MARKERS = (
+    "caption", "imagedesc", "imagedescription", "photodesc", "photodescription",
+    "figuredesc", "figuredescription", "imgdesc", "imgdescription",
+    "사진설명", "이미지설명", "그림설명", "사진캡션", "이미지캡션", "그림캡션",
+)
+
+
+def _is_image_caption_node(node) -> bool:
+    """Identify semantic image-caption elements without matching prose by content."""
+    if node.name == "figcaption":
+        return True
+
+    values = []
+    for attribute in ("id", "class", "itemprop", "aria-label", "data-testid"):
+        value = node.get(attribute, [])
+        values.extend(value if isinstance(value, list) else [value])
+    descriptor = re.sub(r"[^a-z0-9가-힣]", "", " ".join(str(value) for value in values).lower())
+    if any(marker in descriptor for marker in ARTICLE_IMAGE_CAPTION_MARKERS):
+        return True
+    return bool(re.search(r"(?:사진|이미지|그림).{0,8}(?:설명|캡션)|(?:설명|캡션).{0,8}(?:사진|이미지|그림)", descriptor))
+
+
 ARTICLE_NOISE_SELECTORS = [
     'script', 'style', 'noscript', 'iframe', 'svg', 'form', 'button',
     'input', 'textarea', 'select', 'nav', 'header', 'footer', 'aside',
@@ -111,6 +133,11 @@ def _clean_article_node(node) -> str:
     for selector in ARTICLE_NOISE_SELECTORS:
         for unwanted in fragment.select(selector):
             unwanted.decompose()
+    # Remove only nodes explicitly marked as image captions/descriptions. Do not
+    # drop ordinary article paragraphs based on their wording or relevance.
+    for caption in fragment.find_all(_is_image_caption_node):
+        if caption.parent is not None:
+            caption.decompose()
     return _clean_article_lines(fragment.get_text('\n', strip=True).splitlines())
 
 def _jsonld_article_body(value):

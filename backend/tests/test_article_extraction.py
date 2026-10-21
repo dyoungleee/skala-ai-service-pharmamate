@@ -66,6 +66,33 @@ class ArticleExtractionTests(unittest.TestCase):
         self.assertNotIn("흔들림 없는 실행", article)
         self.assertNotIn("무단 전재", article)
 
+    def test_removes_image_captions_but_preserves_article_paragraphs(self):
+        first_paragraph = "실제 본문 첫 문단 표식: 연구진은 후보물질의 개발 계획을 설명했습니다. " * 7
+        final_paragraph = "실제 본문 마지막 문단 표식: 다음 단계에서는 안전성과 효과를 확인합니다. " * 7
+        html = f"""
+        <html><body><div id="articleBody">
+          <p>{first_paragraph}</p>
+          <figure>
+            <img src="/candidate.png" alt="캡션보다 우선하지 않는 대체 텍스트">
+            <figcaption>이 이미지는 후보물질이 암세포를 찾아가는 과정을 보여준다.</figcaption>
+          </figure>
+          <p class="article-image-description">이미지 설명 전용 문구: 후보물질의 작동 장면.</p>
+          <div class="photo_desc">사진 설명 전용 문구: 실험 장면.</div>
+          <p>{final_paragraph}</p>
+        </div></body></html>
+        """
+
+        article, method = extract_article_text(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(method, "article_selector")
+        self.assertIn(" ".join(first_paragraph.split()), article)
+        self.assertIn(" ".join(final_paragraph.split()), article)
+        self.assertLess(article.index("실제 본문 첫 문단 표식"), article.index("실제 본문 마지막 문단 표식"))
+        self.assertNotIn("암세포를 찾아가는 과정", article)
+        self.assertNotIn("이미지 설명 전용 문구", article)
+        self.assertNotIn("사진 설명 전용 문구", article)
+        self.assertNotIn("캡션보다 우선하지 않는 대체 텍스트", article)
+
     def test_removes_image_credits_and_copyright_lines_without_losing_article_text(self):
         article_body = "연구진은 후보물질의 작동 원리와 다음 개발 단계를 설명했습니다. " * 12
         html = f"""
