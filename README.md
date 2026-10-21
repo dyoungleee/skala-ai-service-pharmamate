@@ -49,6 +49,7 @@ PharmaMate는 **Vue 3 기반 프런트엔드와 FastAPI 기반 백엔드**를 �
 | 외부 정보 검색 | Tavily API                    | 최신 제약·바이오 정보 검색 및 답변 근거 확보             |
 | 도구 연동      | MCP (Model Context Protocol)  | 외부 도구와 AI Agent 간 연동 인터페이스 제공             |
 | 실시간 응답    | Server-Sent Events (SSE)      | AI Agent의 처리 단계 및 검증 완료된 답변을 실시간 전달   |
+| 컨테이너 실행  | Docker, Docker Compose        | 웹 화면·API 실행 및 SQLite 데이터 볼륨 보존              |
 
 ### 기술 구성의 특징
 
@@ -101,7 +102,9 @@ flowchart TD
 skala-ai-service-pharmamate/
 ├── frontend/                         # Vue 3 + Vite 프런트엔드
 │   ├── src/                           # 화면·컴포넌트·API 연동 코드
-│   └── package.json                   # 프런트엔드 의존성·실행 명령
+│   ├── package.json                   # 프런트엔드 의존성·실행 명령
+│   ├── Dockerfile                     # Vue 프로덕션 빌드와 Nginx 이미지
+│   └── nginx.conf                     # /api·SSE 프록시 설정
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                   # FastAPI 라우트·REST/SSE 진입점
@@ -113,11 +116,15 @@ skala-ai-service-pharmamate/
 │   │   ├── db/                        # SQLite 스키마·데이터 접근
 │   │   ├── schemas/                   # 요청·응답 및 기사 데이터 모델
 │   │   └── core/                      # 환경 설정·런타임 초기화
-│   └── tests/                         # 단위·통합·회귀 테스트
+│   ├── tests/                         # 단위·통합·회귀 테스트
+│   └── Dockerfile                     # FastAPI 런타임 이미지
 ├── eval/                              # 평가 사례·Before/After 비교 스크립트
 ├── docs/
 │   ├── adr/                           # 기술 선택과 보류 사유(ADR)
 │   └── experiments/                   # 기능별 실험 조건·측정 결과
+├── compose.yaml                       # Vue·FastAPI·SQLite 볼륨 실행
+├── requirements-api.txt               # 3.0 API 런타임 패키지
+├── .env.example                       # 환경 변수 예시
 ├── PharmaMate_2_0.ipynb              # PharmaMate 2.2 비교 기준선
 ├── requirements.txt                   # Python 패키지 의존성
 └── README.md                          # 프로젝트 소개·구조·API·실험 결과
@@ -229,6 +236,7 @@ FastAPI 엔드포인트는 `backend/app/main.py`에 선언되어 있습니다.
 ### 6.1 사전 준비
 
 - Python **3.11 이상**, Node.js **20 이상**
+- Docker Engine 및 Docker Compose 플러그인 (컨테이너 실행을 선택하는 경우)
 - OpenAI API 키(필수), Tavily API 키(선택)
 - 프로젝트 루트에서 실행
 
@@ -244,7 +252,7 @@ Windows PowerShell에서는 `py -3.11 -m venv pharma` 및 `.\pharma\Scripts\Acti
 
 ### 6.2 환경 변수
 
-루트 디렉터리에 Git으로 추적하지 않는 `.env` 파일을 작성합니다.
+루트 디렉터리에 Git으로 추적하지 않는 `.env` 파일을 작성합니다. `.env.example`을 복사해 API 키를 입력해도 됩니다.
 
 ```dotenv
 OPENAI_API_KEY=발급받은_API_키
@@ -256,14 +264,34 @@ PHARMAMATE_EMBEDDING_MODEL=text-embedding-3-small
 
 기본 DB 경로는 `pharmamate_data/pharmamate.sqlite3`입니다. 실제 API 호출에는 제공자 요금이 발생할 수 있습니다. `.env`, 로컬 DB, 개인 학습 기록, `eval/results/`의 생성 로그는 저장소에 커밋하지 마세요.
 
-### 6.3 백엔드 실행
+### 6.3 Docker Compose 실행
+
+Docker Engine이 실행 중인지 확인한 뒤 프로젝트 루트에서 진행합니다. `.env`가 없을 때 예시 파일을 복사하고 `OPENAI_API_KEY`에 실제 키를 입력합니다. 기존 `.env`가 있으면 그대로 사용합니다.
+
+```bash
+cp -n .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+- 웹 화면: http://127.0.0.1:8080
+- API 상태: http://127.0.0.1:8000/api/health
+- API 명세: http://127.0.0.1:8000/docs
+- 로그 확인: `docker compose logs -f api web`
+- 종료: `docker compose down`
+
+SQLite 학습 데이터는 `pharmamate_data` Docker 볼륨에 저장되어 컨테이너를 내려도 유지됩니다. 데이터까지 초기화하려면 `docker compose down --volumes`를 실행합니다. Compose 포트는 `.env`의 `PHARMAMATE_WEB_PORT`, `PHARMAMATE_API_PORT`로 바꿀 수 있습니다.
+
+Compose는 API 컨테이너가 정상 상태가 된 뒤 웹 컨테이너를 시작합니다. Nginx는 `/api` 요청을 FastAPI로 전달하고, SSE 응답을 중간에 모으지 않도록 설정되어 있습니다.
+
+### 6.4 백엔드 직접 실행
 
 ```bash
 source pharma/bin/activate
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### 6.4 프런트엔드 실행 (별도 터미널)
+### 6.5 프런트엔드 직접 실행 (별도 터미널)
 
 ```bash
 npm run dev --prefix frontend

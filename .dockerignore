@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+.venv/
+venv/
+pharma/
+pharmamate_data/
+*.sqlite3
+**/__pycache__/
+*.py[cod]
+backend/tests/
+eval/
+docs/
+outputs/
+PharmaMate_2_0.ipynb
+frontend/node_modules/
+frontend/dist/
