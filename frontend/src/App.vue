@@ -696,6 +696,8 @@ function renderStudyNote(record) {
     flushList()
   }
   const sectionNames = ['한 줄 개념', '헷갈렸던 부분 Q&A', '기사에서 중요한 이유', '기억할 점']
+  const sectionHeading = (value) => value.trim().replace(/^#{1,6}\s*/, '').replace(/^\*\*(.*?)\*\*$/, '$1').trim()
+  const questionText = (value) => value.trim().replace(/^\*\*/, '').replace(/\*\*\s*$/, '').trim()
   const expectedTitle = `# ${record?.term_name || ''} 학습 메모`
   const hasTitle = lines[0]?.trim() === expectedTitle
   if (!hasTitle && record?.term_name) output.push(`<h3 class="record-note-title">${renderMemoInline(`${record.term_name} 학습 메모`)}</h3>`)
@@ -706,7 +708,7 @@ function renderStudyNote(record) {
       flushText()
       continue
     }
-    const heading = line.replace(/^#{1,6}\s*/, '').replace(/^\*\*(.*?)\*\*$/, '$1').trim()
+    const heading = sectionHeading(line)
     if (sectionNames.includes(heading)) {
       flushText()
       output.push(`<h4 class="record-note-section-title">${renderMemoInline(heading)}</h4>`)
@@ -719,10 +721,35 @@ function renderStudyNote(record) {
       continue
     }
     flushList()
-    const questionMatch = line.replace(/^\*\*/, '').replace(/\*\*\s*$/, '').match(/^Q[.:：]\s*(.*)$/i)
+    const questionMatch = questionText(line).match(/^Q[.:：]\s*(.*)$/i)
     if (questionMatch) {
       flushParagraph()
-      output.push(`<p class="record-note-question"><strong>Q: ${renderMemoInline(questionMatch[1])}</strong></p>`)
+      let answerIndex = -1
+      for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        const candidate = lines[cursor].trim()
+        if (!candidate) continue
+        if (sectionNames.includes(sectionHeading(candidate)) || /^Q[.:：]\s*/i.test(questionText(candidate))) break
+        if (/^A[.:：]\s*/i.test(candidate)) {
+          answerIndex = cursor
+          break
+        }
+      }
+
+      const answerLines = []
+      let consumedUntil = index
+      if (answerIndex >= 0) {
+        for (let cursor = answerIndex; cursor < lines.length; cursor += 1) {
+          const candidate = lines[cursor].trim()
+          if (cursor > answerIndex && (sectionNames.includes(sectionHeading(candidate)) || /^Q[.:：]\s*/i.test(questionText(candidate)))) break
+          answerLines.push(cursor === answerIndex ? candidate.replace(/^A[.:：]\s*/i, '') : candidate)
+          consumedUntil = cursor
+        }
+        while (answerLines.length && !answerLines[answerLines.length - 1]) answerLines.pop()
+        output.push(`<details class="record-note-qa-item"><summary><strong>Q: ${renderMemoInline(questionMatch[1])}</strong></summary><div class="record-note-qa-answer"><strong>A:</strong> ${answerLines.map(renderMemoInline).join('<br>')}</div></details>`)
+      } else {
+        output.push(`<details class="record-note-qa-item"><summary><strong>Q: ${renderMemoInline(questionMatch[1])}</strong></summary><div class="record-note-qa-answer">저장된 답변이 없습니다.</div></details>`)
+      }
+      index = consumedUntil
       continue
     }
     const answerMatch = line.match(/^A[.:：]\s*(.*)$/i)

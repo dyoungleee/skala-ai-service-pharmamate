@@ -265,8 +265,15 @@ a { color: inherit; }
 .record-note-body .record-note-title { margin: 0 0 3px; color: #354f5a; font-size: 14px; line-height: 1.5; }
 .record-note-body .record-note-section-title { margin: 8px 0 0; color: #354f5a; font-size: 12px; line-height: 1.5; }
 .record-note-body p { margin: 0; color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; }
-.record-note-body .record-note-question { margin-top: 2px; }
-.record-note-body .record-note-question strong, .record-note-body .record-note-answer strong { color: #354f5a; }
+.record-note-body .record-note-qa-item { border: 1px solid #e4ede8; border-radius: 8px; background: #fff; overflow: hidden; }
+.record-note-body .record-note-qa-item summary { display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; color: #354f5a; cursor: pointer; list-style: none; }
+.record-note-body .record-note-qa-item summary::-webkit-details-marker { display: none; }
+.record-note-body .record-note-qa-item summary::before { content: '+'; flex: 0 0 14px; color: #43866d; font-size: 16px; line-height: 1.25; text-align: center; }
+.record-note-body .record-note-qa-item[open] summary::before { content: '−'; }
+.record-note-body .record-note-qa-item summary:focus-visible { outline: 2px solid #73b29a; outline-offset: -2px; }
+.record-note-body .record-note-qa-item summary strong { color: #354f5a; font-size: 10px; line-height: 1.8; }
+.record-note-body .record-note-qa-answer { padding: 0 10px 10px 32px; color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record-note-body .record-note-qa-answer strong { color: #354f5a; }
 .record-note-body .record-note-bullets { display: grid; gap: 4px; margin: 0; padding-left: 17px; color: #455b65; font-size: 10px; line-height: 1.8; }
 .records-empty { margin: 3px 0 12px; color: #89969c; font-size: 11px; line-height: 1.7; }
 .records-empty strong { color: #536c63; }
