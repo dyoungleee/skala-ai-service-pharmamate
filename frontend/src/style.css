@@ -120,7 +120,6 @@ a { color: inherit; }
 .saved-issue-heading span, .saved-issue-label { flex: 0 0 auto; color: #90a09e; font-size: 9px; }
 .saved-issue a { color: #527987; font-size: 10px; line-height: 1.5; text-decoration: none; }
 .saved-issue a:hover { color: var(--green); text-decoration: underline; }
-.recent-articles { margin-top: 13px; padding-top: 11px; border-top: 1px solid #edf0f1; }
 .term-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid #edf0f1; }
 .term-section-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .term-section-heading .eyebrow { margin-bottom: 6px; }

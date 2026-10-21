@@ -16,7 +16,6 @@ const studyNote = ref('')
 const memoDraftReady = ref(false)
 const studyRecords = ref([])
 const selectedRecordKey = ref('')
-const readArticles = ref([])
 const industryIssues = ref([])
 const selectedIssueId = ref('')
 const readMessage = ref('')
@@ -783,7 +782,7 @@ function moveStep(offset) {
 function isStepComplete(stepId) {
   if (stepId === 'article') return Boolean(articleResult.value)
   if (stepId === 'tutor') return messages.value.some((message) => message.role === 'assistant' && message.content)
-  if (stepId === 'records') return studyRecords.value.length > 0 || readArticles.value.length > 0
+  if (stepId === 'records') return studyRecords.value.length > 0 || industryIssues.value.length > 0
   return false
 }
 
@@ -1151,14 +1150,8 @@ async function refreshRecords() {
 async function refreshReadingLists() {
   if (!sessionId.value) return
   try {
-    const [articles, issues] = await Promise.all([
-      sessionRequest(`/api/sessions/${sessionId.value}/articles`),
-      sessionRequest(`/api/sessions/${sessionId.value}/industry-issues`),
-    ])
-    readArticles.value = articles
-    industryIssues.value = issues
+    industryIssues.value = await sessionRequest(`/api/sessions/${sessionId.value}/industry-issues`)
   } catch {
-    readArticles.value = []
     industryIssues.value = []
   }
 }
@@ -1525,16 +1518,7 @@ initializeSession()
               </a>
             </article>
           </div>
-          <p v-else-if="!readArticles.length" class="records-empty">읽은 기사를 저장하면 여기에 이슈별로 표시됩니다.</p>
-          <div v-if="readArticles.length" class="issue-list recent-articles">
-            <span class="mini-label">최근 저장한 기사</span>
-            <article v-for="article in readArticles" :key="article.article_id" class="saved-issue">
-              <a :href="article.source_url?.startsWith('http') ? article.source_url : undefined"
-                 :target="article.source_url?.startsWith('http') ? '_blank' : undefined"
-                 :rel="article.source_url?.startsWith('http') ? 'noreferrer' : undefined">{{ article.title }}</a>
-              <span v-if="article.issue_title" class="saved-issue-label">{{ article.issue_title }}</span>
-            </article>
-          </div>
+          <p v-else class="records-empty">읽은 기사를 저장하면 여기에 이슈별로 표시됩니다.</p>
           <p class="privacy-note">기사는 현재 세션 안에서만 보입니다.</p>
         </section>
       </div>
