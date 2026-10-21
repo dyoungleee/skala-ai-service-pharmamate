@@ -1251,7 +1251,7 @@ initializeSession()
             </template>
           </div>
           <div class="article-term-edit-bar">
-            <p>원문에서 낯선 용어를 드래그해 추가할 수 있습니다.</p>
+            <p>원문에서 핵심 용어를 드래그해 추가할 수 있습니다.</p>
             <div v-if="selectedArticleText" class="article-term-selection">
               <span>선택한 문구 <strong>{{ selectedArticleText }}</strong></span>
               <button type="button" class="button button-secondary" :disabled="busy || articleTermBusy || articleTermClassifying || selectedArticleText.length < 2 || selectedArticleText.length > 70"
@@ -1451,7 +1451,6 @@ initializeSession()
       </div>
       <div class="step-navigation">
         <button class="button button-secondary" @click="moveStep(-1)"><span aria-hidden="true">←</span> 기사 읽기로</button>
-        <span>학습한 용어와 대화를 저장한 뒤 기록에서 다시 확인할 수 있습니다.</span>
         <button class="button button-primary" @click="goToStep('records')">내 학습 기록 <span aria-hidden="true">→</span></button>
       </div>
     </section>
