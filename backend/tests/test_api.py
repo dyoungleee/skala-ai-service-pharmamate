@@ -432,12 +432,12 @@ print(json.dumps(response.json(), ensure_ascii=False))
             f"/api/sessions/{session_id}/study-records", headers=headers
         ).json()
         note = records[0]["note"]
-        self.assertIn("한 줄 개념\n", note)
-        self.assertIn("헷갈렸던 부분 Q&A", note)
-        self.assertIn(f"Q. {question}", note)
-        self.assertIn("A. 검증된 답변을 조각으로 전달합니다.", note)
-        self.assertIn("기사에서 중요한 이유", note)
-        self.assertIn("기억할 점", note)
+        self.assertIn("# 임상 1상 학습 메모\n\n## 한 줄 개념\n", note)
+        self.assertIn("## 헷갈렸던 부분 Q&A", note)
+        self.assertIn(f"**Q: {question}**", note)
+        self.assertIn("A: 검증된 답변을 조각으로 전달합니다.", note)
+        self.assertIn("## 기사에서 중요한 이유", note)
+        self.assertIn("## 기억할 점", note)
 
         # Older blank notes are backfilled from their saved Q&A when opened.
         with repository.connect_db() as conn:
@@ -527,11 +527,11 @@ print(json.dumps(response.json(), ensure_ascii=False))
         record = self.client.get(
             f"/api/sessions/{session_id}/study-records", headers=headers
         ).json()[0]
-        self.assertIn("한 줄 개념\n사람 대상 초기 평가 단계입니다.", record["note"])
+        self.assertIn("# 임상 1상 학습 메모\n\n## 한 줄 개념\n사람 대상 초기 평가 단계입니다.", record["note"])
         self.assertIn("헷갈렸던 부분 Q&A", record["note"])
         self.assertIn("아직 이 용어에 연결된 질문과 답변이 없습니다.", record["note"])
-        self.assertIn("기사에서 중요한 이유\n후보물질의 안전성을 살핍니다.", record["note"])
-        self.assertIn("기억할 점\n개발 단계 이해", record["note"])
+        self.assertIn("## 기사에서 중요한 이유\n후보물질의 안전성을 살핍니다.", record["note"])
+        self.assertIn("## 기억할 점\n- 개발 단계 이해", record["note"])
         self.assertEqual(record["qa_count"], 0)
 
     def test_read_articles_dedupe_copies_and_group_issues_conservatively(self):

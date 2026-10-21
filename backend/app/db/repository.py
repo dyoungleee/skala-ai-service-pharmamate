@@ -295,31 +295,35 @@ def get_session_turns(
 
 
 def _draft_session_study_note(term: dict, conversations: list[dict]) -> str:
-    """Create the default four-part learning memo from a term and its tutor turns."""
+    """Create the default Markdown learning memo from a term and its tutor turns."""
+    term_name = str(term.get("term") or term.get("term_name") or "용어").strip()
     concept = str(term.get("simple_definition") or "정의가 저장되지 않았습니다.").strip()
     article_context = str(term.get("article_context") or "기사 맥락이 저장되지 않았습니다.").strip()
     remember = str(term.get("reason") or concept).strip()
+    remember_items = list(dict.fromkeys(item for item in (remember, concept) if item))
     lines = [
-        "한 줄 개념",
+        f"# {term_name} 학습 메모",
+        "",
+        "## 한 줄 개념",
         concept[:1000],
         "",
-        "헷갈렸던 부분 Q&A",
+        "## 헷갈렸던 부분 Q&A",
     ]
     if conversations:
         for item in conversations[-8:]:
             question = str(item.get("question") or "").strip()
             answer = str(item.get("answer") or "").strip()
             if question and answer:
-                lines.extend([f"Q. {question[:200]}", f"A. {answer[:500]}", ""])
+                lines.extend([f"**Q: {question[:200]}**  ", f"A: {answer[:500]}", ""])
     else:
         lines.append("아직 이 용어에 연결된 질문과 답변이 없습니다.")
     lines.extend([
         "",
-        "기사에서 중요한 이유",
+        "## 기사에서 중요한 이유",
         article_context[:1000],
         "",
-        "기억할 점",
-        remember[:700],
+        "## 기억할 점",
+        *[f"- {item[:700]}" for item in remember_items],
     ])
     return "\n".join(lines).strip()[:7900]
 

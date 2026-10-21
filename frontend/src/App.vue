@@ -604,13 +604,14 @@ function buildStudyNoteDraft() {
   const parseQAs = (section) => {
     const lines = String(section || '').split('\n')
     const pairs = []
+    const plainLine = (line) => String(line).trim().replace(/^\*\*/, '').replace(/\*\*\s*$/, '').trim()
     for (let index = 0; index < lines.length; index += 1) {
-      const questionMatch = lines[index].match(/^\s*Q[.:：]\s*(.*)$/i)
+      const questionMatch = plainLine(lines[index]).match(/^Q[.:：]\s*(.*)$/i)
       if (!questionMatch) continue
-      const answerIndex = lines.findIndex((line, candidate) => candidate > index && /^\s*A[.:：]\s*/i.test(line))
+      const answerIndex = lines.findIndex((line, candidate) => candidate > index && /^\s*A[.:：]\s*/i.test(plainLine(line)))
       if (answerIndex < 0) continue
-      const nextQuestionIndex = lines.findIndex((line, candidate) => candidate > answerIndex && /^\s*Q[.:：]\s*/i.test(line))
-      const answer = [lines[answerIndex].replace(/^\s*A[.:：]\s*/i, ''), ...lines.slice(answerIndex + 1, nextQuestionIndex < 0 ? lines.length : nextQuestionIndex)].join('\n').trim()
+      const nextQuestionIndex = lines.findIndex((line, candidate) => candidate > answerIndex && /^Q[.:：]\s*/i.test(plainLine(line)))
+      const answer = [plainLine(lines[answerIndex]).replace(/^A[.:：]\s*/i, ''), ...lines.slice(answerIndex + 1, nextQuestionIndex < 0 ? lines.length : nextQuestionIndex)].join('\n').trim()
       const asked = questionMatch[1].trim()
       if (asked && answer) pairs.push({ question: asked, answer })
     }
@@ -624,14 +625,20 @@ function buildStudyNoteDraft() {
   }
   const qaSection = mergedQAs.size
     ? [...mergedQAs.values()].map(({ question: asked, answer }) => (
-      `Q. ${String(asked).slice(0, 200)}\nA. ${String(answer).slice(0, 500)}`
+      `**Q: ${String(asked).slice(0, 200)}**  \nA: ${String(answer).slice(0, 500)}`
     )).join('\n\n')
     : '아직 이 용어에 연결된 질문과 답변이 없습니다.'
+  const rememberText = readSection(existingNote, '기억할 점') || `${remember}\n${definition}`
+  const rememberItems = [...new Set(rememberText.split('\n')
+    .map((line) => line.replace(/^\s*[-*]\s*/, '').trim())
+    .filter(Boolean))]
+  const rememberSection = rememberItems.map((line) => `- ${line}`).join('\n')
   studyNote.value = [
-    '한 줄 개념', readSection(existingNote, '한 줄 개념') || definition,
-    '', '헷갈렸던 부분 Q&A', qaSection,
-    '', '기사에서 중요한 이유', readSection(existingNote, '기사에서 중요한 이유') || articleContext,
-    '', '기억할 점', readSection(existingNote, '기억할 점') || remember,
+    `# ${term.term} 학습 메모`,
+    '', '## 한 줄 개념', readSection(existingNote, '한 줄 개념') || definition,
+    '', '## 헷갈렸던 부분 Q&A', qaSection,
+    '', '## 기사에서 중요한 이유', readSection(existingNote, '기사에서 중요한 이유') || articleContext,
+    '', '## 기억할 점', rememberSection,
   ].join('\n').slice(0, 7900)
   memoDraftReady.value = true
   saveMessage.value = ''
@@ -654,12 +661,80 @@ function formatRecordDate(value) {
   })
 }
 
-function displayStudyNote(record) {
-  return String(record?.note || record?.simple_definition || '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^[-*]\s+/gm, '• ')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .trim()
+function escapeMemoHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character])
+}
+
+function renderMemoInline(value) {
+  return escapeMemoHtml(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+}
+
+function renderStudyNote(record) {
+  const note = String(record?.note || record?.simple_definition || '')
+  const lines = note.split(/\r?\n/)
+  const output = []
+  let paragraph = []
+  let listItems = []
+  const flushParagraph = () => {
+    if (!paragraph.length) return
+    output.push(`<p>${paragraph.map(renderMemoInline).join('<br>')}</p>`)
+    paragraph = []
+  }
+  const flushList = () => {
+    if (!listItems.length) return
+    output.push(`<ul class="record-note-bullets">${listItems.map((item) => `<li>${renderMemoInline(item)}</li>`).join('')}</ul>`)
+    listItems = []
+  }
+  const flushText = () => {
+    flushParagraph()
+    flushList()
+  }
+  const sectionNames = ['한 줄 개념', '헷갈렸던 부분 Q&A', '기사에서 중요한 이유', '기억할 점']
+  const expectedTitle = `# ${record?.term_name || ''} 학습 메모`
+  const hasTitle = lines[0]?.trim() === expectedTitle
+  if (!hasTitle && record?.term_name) output.push(`<h3 class="record-note-title">${renderMemoInline(`${record.term_name} 학습 메모`)}</h3>`)
+
+  for (let index = hasTitle ? 1 : 0; index < lines.length; index += 1) {
+    const line = lines[index].trim()
+    if (!line) {
+      flushText()
+      continue
+    }
+    const heading = line.replace(/^#{1,6}\s*/, '').replace(/^\*\*(.*?)\*\*$/, '$1').trim()
+    if (sectionNames.includes(heading)) {
+      flushText()
+      output.push(`<h4 class="record-note-section-title">${renderMemoInline(heading)}</h4>`)
+      continue
+    }
+    const bulletMatch = line.match(/^[-*]\s+(.+)$/)
+    if (bulletMatch) {
+      flushParagraph()
+      listItems.push(bulletMatch[1])
+      continue
+    }
+    flushList()
+    const questionMatch = line.replace(/^\*\*/, '').replace(/\*\*\s*$/, '').match(/^Q[.:：]\s*(.*)$/i)
+    if (questionMatch) {
+      flushParagraph()
+      output.push(`<p class="record-note-question"><strong>Q: ${renderMemoInline(questionMatch[1])}</strong></p>`)
+      continue
+    }
+    const answerMatch = line.match(/^A[.:：]\s*(.*)$/i)
+    if (answerMatch) {
+      flushParagraph()
+      output.push(`<p class="record-note-answer"><strong>A:</strong> ${renderMemoInline(answerMatch[1])}</p>`)
+      continue
+    }
+    paragraph.push(line)
+  }
+  flushText()
+  return output.join('')
 }
 
 function selectStudyRecord(record) {
@@ -1398,11 +1473,11 @@ initializeSession()
             <div class="record-note-heading">
               <div>
                 <span class="mini-label">저장된 학습 메모</span>
-                <h3>{{ selectedStudyRecord.term_name }}</h3>
+                <h3>{{ selectedStudyRecord.term_name }} 학습 메모</h3>
               </div>
               <span class="record-date">{{ formatRecordDate(selectedStudyRecord.updated_at) }}</span>
             </div>
-            <div class="record-note-body">{{ displayStudyNote(selectedStudyRecord) }}</div>
+            <div class="record-note-body" v-html="renderStudyNote(selectedStudyRecord)"></div>
             <p class="privacy-note">{{ recordCategoryLabel(selectedStudyRecord.category) }} · 관련 대화 {{ selectedStudyRecord.qa_count }}건</p>
           </section>
         </section>

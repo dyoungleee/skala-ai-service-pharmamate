@@ -260,9 +260,13 @@ a { color: inherit; }
 .record-note-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
 .record-note-heading .mini-label { margin-bottom: 4px; }
 .record-note-heading h3 { margin: 0; color: #354f5a; font-size: 13px; }
-.record-note-body { display: grid; gap: 12px; color: #455b65; overflow-wrap: anywhere; }
-.record-note-section h4 { margin: 0 0 4px; color: #354f5a; font-size: 12px; line-height: 1.5; }
-.record-note-section p { margin: 0; color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; }
+.record-note-body { display: grid; gap: 7px; color: #455b65; overflow-wrap: anywhere; }
+.record-note-body .record-note-title { margin: 0 0 3px; color: #354f5a; font-size: 14px; line-height: 1.5; }
+.record-note-body .record-note-section-title { margin: 8px 0 0; color: #354f5a; font-size: 12px; line-height: 1.5; }
+.record-note-body p { margin: 0; color: #455b65; font-size: 10px; line-height: 1.8; white-space: pre-wrap; }
+.record-note-body .record-note-question { margin-top: 2px; }
+.record-note-body .record-note-question strong, .record-note-body .record-note-answer strong { color: #354f5a; }
+.record-note-body .record-note-bullets { display: grid; gap: 4px; margin: 0; padding-left: 17px; color: #455b65; font-size: 10px; line-height: 1.8; }
 .records-empty { margin: 3px 0 12px; color: #89969c; font-size: 11px; line-height: 1.7; }
 .records-empty strong { color: #536c63; }
 .page-footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #e6e9ec; padding: 18px 2px 28px; color: #a1aaae; font-size: 9px; }
