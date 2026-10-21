@@ -668,6 +668,7 @@ function selectStudyRecord(record) {
 
 function goToStep(stepId) {
   if (!steps.some((step) => step.id === stepId)) return
+  if (stepId === 'records') selectedRecordKey.value = ''
   activeStep.value = stepId
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -1037,7 +1038,7 @@ async function refreshRecords() {
   try {
     studyRecords.value = await sessionRequest(`/api/sessions/${sessionId.value}/study-records`)
     if (!studyRecords.value.some((record) => record.term_key === selectedRecordKey.value)) {
-      selectedRecordKey.value = sortedStudyRecords.value[0]?.term_key || ''
+      selectedRecordKey.value = ''
     }
   } catch {
     studyRecords.value = []
@@ -1390,6 +1391,9 @@ initializeSession()
             </details>
           </div>
           <p v-else class="records-empty">아직 저장된 용어가 없습니다. AI Tutor에서 용어를 선택하고 질문한 뒤 <strong>학습 용어와 관련 대화 저장</strong>을 눌러 보세요. 대화 요약과 질문이 없어도 기본 용어 정리가 기록됩니다.</p>
+          <p v-if="studyRecords.length && !selectedStudyRecord" class="record-note-prompt">
+            용어를 누르면 저장된 학습 메모가 여기에 표시됩니다.
+          </p>
           <section v-if="selectedStudyRecord" class="record-note-detail" aria-live="polite">
             <div class="record-note-heading">
               <div>
