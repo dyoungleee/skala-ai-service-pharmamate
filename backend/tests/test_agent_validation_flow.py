@@ -49,6 +49,15 @@ def build_graph(answers: list[str], answer_validator=None, *, route="article", s
 
 
 class AgentValidationFlowTests(unittest.TestCase):
+    def test_explicit_selected_term_mention_survives_router_false_label(self):
+        graph = build_graph(["PSMA는 세포 표면 표적입니다."])
+        result = graph.invoke({
+            "question": "PSMA가 전립선암 세포에서 어떤 역할을 하나요?",
+            "term": "전립선특이막항원(PSMA)\n전립선 세포 표면 단백질",
+            "article": "",
+        })
+        self.assertTrue(result["related_to_selected"])
+
     def test_revises_once_then_accepts_supported_answer(self):
         graph = build_graph([
             "임상 성공률은 87%입니다.",

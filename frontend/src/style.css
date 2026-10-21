@@ -197,7 +197,11 @@ a { color: inherit; }
 .validation-ok { color: #2f7b5b; background: #edf7f1; }
 .validation-caution { color: #9a6636; background: #fbf3e8; }
 .answer-text { margin: 0; color: #354b57; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
-.source-list { display: grid; gap: 6px; margin-top: 14px; padding: 10px 11px; border: 1px solid #e8edef; border-radius: 8px; background: #fafcfc; }
+.source-details { margin-top: 10px; color: #71828a; font-size: 10px; }
+.source-details summary { width: fit-content; cursor: pointer; color: #71828a; font-size: 10px; }
+.source-details summary:hover { color: #36748b; }
+.source-details summary span { color: #9aa5aa; }
+.source-list { display: grid; gap: 6px; margin-top: 8px; padding: 10px 11px; border: 1px solid #e8edef; border-radius: 8px; background: #fafcfc; }
 .source-list a { overflow-wrap: anywhere; color: #36748b; font-size: 10px; text-decoration: none; }
 .source-list a:hover { text-decoration: underline; }
 .source-list a small { color: #9aa5aa; }

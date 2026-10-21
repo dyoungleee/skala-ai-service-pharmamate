@@ -5,6 +5,8 @@ LLM, 외부 검색 클라이언트, 학습 기록 조회 함수는 호출자가 
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Literal, TypedDict, Any
 
@@ -68,6 +70,28 @@ class AgentState(TypedDict, total=False):
 
 
 _SOURCE_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pharmamate-source")
+
+
+def question_mentions_selected_term(question: str, term_context: str) -> bool:
+    """Keep explicitly named selected-term turns linked even if the LLM router mislabels them."""
+    term_name = (term_context or "").splitlines()[0].strip()
+    if not term_name:
+        return False
+    aliases = [term_name, *re.findall(r"\(([^)]+)\)", term_name)]
+    if "(" in term_name:
+        aliases.append(term_name.split("(", 1)[0].strip())
+
+    def normalize(value: str) -> str:
+        return "".join(
+            character for character in unicodedata.normalize("NFKC", value).casefold()
+            if character.isalnum()
+        )
+
+    normalized_question = normalize(question)
+    return any(
+        len(normalize(alias)) >= 3 and normalize(alias) in normalized_question
+        for alias in aliases
+    )
 
 
 def build_agent_graph(
@@ -205,7 +229,13 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
             "reason": decision.reason,
             "memory_query": decision.memory_query,
             "search_query": decision.search_query,
-            "related_to_selected": bool(decision.related_to_selected and state.get("term")),
+            "related_to_selected": bool(
+                state.get("term")
+                and (
+                    decision.related_to_selected
+                    or question_mentions_selected_term(state["question"], state.get("term", ""))
+                )
+            ),
             "evidence_type": decision.evidence_type,
             "evidence_gap": decision.evidence_gap,
             "lookup_required": lookup_required,

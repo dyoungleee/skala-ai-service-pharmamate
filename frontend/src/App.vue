@@ -89,9 +89,9 @@ const selectedTutorQAs = computed(() => {
     const questionMessage = messages.value[index]
     const answerMessage = messages.value[index + 1]
     if (questionMessage.role !== 'user' || answerMessage.role !== 'assistant' || !answerMessage.content) continue
-    if (!answerMessage.relatedToSelected) continue
     const answerTermKey = termStorageKey(answerMessage.selectedTerm || selectedTutorTerm.value.term)
     if (answerTermKey !== selectedKey) continue
+    if (!answerMessage.relatedToSelected && !questionMentionsTerm(questionMessage.content, selectedTutorTerm.value)) continue
     conversations.push({ question: questionMessage.content, answer: answerMessage.content })
   }
   return conversations.slice(-8)
@@ -364,6 +364,15 @@ function termAliases(term) {
   ].map((value) => String(value || '').trim()).filter(Boolean))]
 }
 
+function questionMentionsTerm(question, term) {
+  const normalize = (value) => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+  const normalizedQuestion = normalize(question)
+  return termAliases(term).some((alias) => {
+    const normalizedAlias = normalize(alias)
+    return normalizedAlias.length >= 3 && normalizedQuestion.includes(normalizedAlias)
+  })
+}
+
 function isKnownTerm(term) {
   if (!term) return false
   const currentKeys = new Set(termAliases(term).map(termStorageKey).filter(Boolean))
@@ -574,19 +583,55 @@ async function focusArticleTermSummary(termName) {
 function buildStudyNoteDraft() {
   const term = selectedTutorTerm.value
   if (!term) return
+  const selectedKey = termStorageKey(term.term)
+  const savedRecord = studyRecords.value.find((record) => (
+    record.term_key === selectedKey
+    || (record.aliases || []).some((alias) => termStorageKey(alias) === selectedKey)
+  ))
+  const existingNote = String(savedRecord?.note || '')
   const definition = String(term.simple_definition || '용어의 기본 정의를 확인해 보세요.').slice(0, 900)
   const articleContext = String(term.article_context || term.reason || '현재 기사와 직접 연결된 설명이 없습니다.').slice(0, 900)
   const remember = String(term.reason || definition).slice(0, 700)
-  const qaSection = selectedTutorQAs.value.length
-    ? selectedTutorQAs.value.map(({ question: asked, answer }) => (
+  const headings = ['한 줄 개념', '헷갈렸던 부분 Q&A', '기사에서 중요한 이유', '기억할 점']
+  const normalizeHeading = (line) => line.trim().replace(/^#{1,6}\s*/, '').replace(/\*\*/g, '').replace(/:$/, '').trim()
+  const readSection = (note, heading) => {
+    const lines = String(note || '').split('\n')
+    const start = lines.findIndex((line) => normalizeHeading(line) === heading)
+    if (start < 0) return ''
+    const end = lines.findIndex((line, index) => index > start && headings.includes(normalizeHeading(line)))
+    return lines.slice(start + 1, end < 0 ? lines.length : end).join('\n').trim()
+  }
+  const parseQAs = (section) => {
+    const lines = String(section || '').split('\n')
+    const pairs = []
+    for (let index = 0; index < lines.length; index += 1) {
+      const questionMatch = lines[index].match(/^\s*Q[.:：]\s*(.*)$/i)
+      if (!questionMatch) continue
+      const answerIndex = lines.findIndex((line, candidate) => candidate > index && /^\s*A[.:：]\s*/i.test(line))
+      if (answerIndex < 0) continue
+      const nextQuestionIndex = lines.findIndex((line, candidate) => candidate > answerIndex && /^\s*Q[.:：]\s*/i.test(line))
+      const answer = [lines[answerIndex].replace(/^\s*A[.:：]\s*/i, ''), ...lines.slice(answerIndex + 1, nextQuestionIndex < 0 ? lines.length : nextQuestionIndex)].join('\n').trim()
+      const asked = questionMatch[1].trim()
+      if (asked && answer) pairs.push({ question: asked, answer })
+    }
+    return pairs
+  }
+  const existingQAs = parseQAs(readSection(existingNote, '헷갈렸던 부분 Q&A'))
+  const mergedQAs = new Map()
+  for (const item of [...existingQAs, ...selectedTutorQAs.value]) {
+    const key = String(item.question || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleLowerCase()
+    if (key && item.answer) mergedQAs.set(key, item)
+  }
+  const qaSection = mergedQAs.size
+    ? [...mergedQAs.values()].map(({ question: asked, answer }) => (
       `Q. ${String(asked).slice(0, 200)}\nA. ${String(answer).slice(0, 500)}`
     )).join('\n\n')
     : '아직 이 용어에 연결된 질문과 답변이 없습니다.'
   studyNote.value = [
-    '한 줄 개념', definition,
+    '한 줄 개념', readSection(existingNote, '한 줄 개념') || definition,
     '', '헷갈렸던 부분 Q&A', qaSection,
-    '', '기사에서 중요한 이유', articleContext,
-    '', '기억할 점', remember,
+    '', '기사에서 중요한 이유', readSection(existingNote, '기사에서 중요한 이유') || articleContext,
+    '', '기억할 점', readSection(existingNote, '기억할 점') || remember,
   ].join('\n').slice(0, 7900)
   memoDraftReady.value = true
   saveMessage.value = ''
@@ -1248,15 +1293,17 @@ initializeSession()
                     </span>
                   </div>
                   <p class="answer-text" v-html="renderAnswerText(message.content)"></p>
-                  <div v-if="message.sources?.length" class="source-list">
-                    <span class="mini-label">참고 자료</span>
-                    <a v-for="(source, sourceIndex) in message.sources" :key="sourceIndex"
-                       :href="source.url?.startsWith('http') ? source.url : undefined"
-                       :target="source.url?.startsWith('http') ? '_blank' : undefined"
-                       :rel="source.url?.startsWith('http') ? 'noreferrer' : undefined">
-                      {{ source.title || source.record_id || '학습 기록' }}<small v-if="source.record_id"> · {{ source.record_id }}</small>
-                    </a>
-                  </div>
+                  <details v-if="message.sources?.length" class="source-details">
+                    <summary>참고 자료 보기 <span>({{ message.sources.length }})</span></summary>
+                    <div class="source-list">
+                      <a v-for="(source, sourceIndex) in message.sources" :key="sourceIndex"
+                         :href="source.url?.startsWith('http') ? source.url : undefined"
+                         :target="source.url?.startsWith('http') ? '_blank' : undefined"
+                         :rel="source.url?.startsWith('http') ? 'noreferrer' : undefined">
+                        {{ source.title || source.record_id || '학습 기록' }}<small v-if="source.record_id"> · {{ source.record_id }}</small>
+                      </a>
+                    </div>
+                  </details>
                   <div v-if="message.recommendations?.length" class="recommendations">
                     <div class="recommendation-heading"><span>다음 학습 방향</span><small>원하는 질문을 눌러 이어가세요</small></div>
                     <button v-for="item in message.recommendations" :key="item.category" type="button"
