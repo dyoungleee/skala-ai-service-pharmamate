@@ -636,9 +636,9 @@ function buildStudyNoteDraft() {
   studyNote.value = [
     `# ${term.term} 학습 메모`,
     '', '## 한 줄 개념', readSection(existingNote, '한 줄 개념') || definition,
-    '', '## 헷갈렸던 부분 Q&A', qaSection,
     '', '## 기사에서 중요한 이유', readSection(existingNote, '기사에서 중요한 이유') || articleContext,
     '', '## 기억할 점', rememberSection,
+    '', '## 헷갈렸던 부분 Q&A', qaSection,
   ].join('\n').slice(0, 7900)
   memoDraftReady.value = true
   saveMessage.value = ''

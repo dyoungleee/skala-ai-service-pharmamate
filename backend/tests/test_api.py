@@ -438,6 +438,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         self.assertIn("A: 검증된 답변을 조각으로 전달합니다.", note)
         self.assertIn("## 기사에서 중요한 이유", note)
         self.assertIn("## 기억할 점", note)
+        self.assertLess(note.index("## 기억할 점"), note.index("## 헷갈렸던 부분 Q&A"))
 
         # Older blank notes are backfilled from their saved Q&A when opened.
         with repository.connect_db() as conn:
@@ -532,6 +533,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         self.assertIn("아직 이 용어에 연결된 질문과 답변이 없습니다.", record["note"])
         self.assertIn("## 기사에서 중요한 이유\n후보물질의 안전성을 살핍니다.", record["note"])
         self.assertIn("## 기억할 점\n- 개발 단계 이해", record["note"])
+        self.assertLess(record["note"].index("## 기억할 점"), record["note"].index("## 헷갈렸던 부분 Q&A"))
         self.assertEqual(record["qa_count"], 0)
 
     def test_read_articles_dedupe_copies_and_group_issues_conservatively(self):

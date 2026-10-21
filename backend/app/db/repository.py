@@ -307,6 +307,12 @@ def _draft_session_study_note(term: dict, conversations: list[dict]) -> str:
         "## 한 줄 개념",
         concept[:1000],
         "",
+        "## 기사에서 중요한 이유",
+        article_context[:1000],
+        "",
+        "## 기억할 점",
+        *[f"- {item[:700]}" for item in remember_items],
+        "",
         "## 헷갈렸던 부분 Q&A",
     ]
     if conversations:
@@ -317,14 +323,6 @@ def _draft_session_study_note(term: dict, conversations: list[dict]) -> str:
                 lines.extend([f"**Q: {question[:200]}**  ", f"A: {answer[:500]}", ""])
     else:
         lines.append("아직 이 용어에 연결된 질문과 답변이 없습니다.")
-    lines.extend([
-        "",
-        "## 기사에서 중요한 이유",
-        article_context[:1000],
-        "",
-        "## 기억할 점",
-        *[f"- {item[:700]}" for item in remember_items],
-    ])
     return "\n".join(lines).strip()[:7900]
 
 
