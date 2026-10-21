@@ -74,10 +74,9 @@ a { color: inherit; }
 .section-heading .eyebrow { margin-bottom: 6px; }
 .section-heading h2 { margin: 0; color: var(--ink); font-size: 19px; letter-spacing: -.55px; font-weight: 650; }
 .compact-heading { margin-bottom: 16px; }
-.compact-heading h2 { max-width: 460px; font-size: 16px; line-height: 1.4; }
+.compact-heading h2 { max-width: 920px; font-size: 16px; line-height: 1.4; }
 .field-label { display: flex; align-items: center; gap: 8px; margin: 15px 0 7px; color: #394d5a; font-size: 12px; font-weight: 600; }
 .field-label span { color: #9aa5ac; font-size: 10px; font-weight: 500; }
-.field-hint { margin: 6px 0 0; color: #89969c; font-size: 10px; line-height: 1.5; }
 .text-input { width: 100%; border: 1px solid #dce2e6; border-radius: 8px; background: #fff; color: var(--ink); padding: 11px 12px; font-size: 12px; outline: none; transition: border-color .15s, box-shadow .15s; }
 .text-input:focus, .composer textarea:focus { border-color: #73b29a; box-shadow: 0 0 0 3px #e6f3ed; }
 .text-input::placeholder, .composer textarea::placeholder { color: #a4afb6; }
@@ -118,11 +117,22 @@ a { color: inherit; }
 .term-section { margin-top: 18px; }
 .term-section-heading { display: flex; justify-content: space-between; align-items: center; color: #9ba5aa; font-size: 10px; }
 .term-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
-.term-chip { max-width: 100%; border: 1px solid #e2e8e8; border-radius: 999px; padding: 6px 9px; background: #fff; color: #60737c; font-size: 10px; }
-.term-chip-new { border-color: #f0d98e; background: #fff9e5; color: #76602a; }
-.term-chip-known { border-color: #b5dfc5; background: #eef9f1; color: #326b49; }
+.term-chip-item { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid #e2e8e8; border-radius: 999px; overflow: hidden; background: #fff; color: #60737c; }
+.term-chip-item.term-chip-new { border-color: #f0d98e; background: #fff9e5; color: #76602a; }
+.term-chip-item.term-chip-known { border-color: #b5dfc5; background: #eef9f1; color: #326b49; }
+.term-chip-item.term-chip-active { border-color: #a8d2be; background: #eaf6f0; color: #176c57; }
+.term-chip { max-width: 100%; border: 0; border-radius: 0; padding: 6px 9px; background: transparent; color: inherit; font-size: 10px; text-align: left; overflow-wrap: anywhere; }
 .term-chip small { margin-left: 4px; color: inherit; font-size: 8px; opacity: .75; }
-.term-chip-active { border-color: #a8d2be; background: #eaf6f0; color: #176c57; }
+.term-chip-remove { align-self: stretch; padding: 0 7px; border: 0; border-left: 1px solid #00000010; background: transparent; color: inherit; font-size: 14px; line-height: 1; }
+.term-chip-remove:hover:not(:disabled) { background: #0000000a; }
+.term-list-empty { margin: 10px 0 0; color: #89969c; font-size: 10px; line-height: 1.6; }
+.article-term-edit-bar { display: grid; gap: 7px; margin-top: 9px; color: #89969c; font-size: 10px; line-height: 1.6; }
+.article-term-edit-bar p { margin: 0; }
+.article-term-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 10px; border: 1px solid #e3ece7; border-radius: 8px; background: #f8fbf9; }
+.article-term-selection span { min-width: 0; color: #71817e; overflow-wrap: anywhere; }
+.article-term-selection strong { color: #355b4d; }
+.article-term-selection .button { margin-left: auto; padding: 7px 10px; font-size: 10px; }
+.article-term-message { color: #47715d; }
 .selected-term-card { margin-top: 10px; padding: 12px; border-radius: 9px; background: #f8faf9; }
 .selected-term-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .selected-term-top strong { color: #2b4652; font-size: 12px; }
@@ -137,9 +147,12 @@ a { color: inherit; }
 .term-swatch-known { background: #bbf7d0; }
 .article-reading-text { padding: 20px; border: 1px solid #e3e9e9; border-radius: 10px; background: #fcfdfc; color: #354b57; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 2; }
 .article-reading-text mark { border-radius: 3px; padding: 0 2px; color: inherit; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.article-term-button { display: inline; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; vertical-align: baseline; cursor: pointer; }
+.article-term-button:hover mark { box-shadow: 0 0 0 2px #6b8ca0; }
+.article-term-button:focus-visible { outline: 2px solid #27678a; outline-offset: 2px; border-radius: 3px; }
+.article-term-button:disabled { cursor: wait; }
 .term-highlight-new { background: #fde68a; }
 .term-highlight-known { background: #bbf7d0; }
-.reading-note { margin: 10px 0 0; color: #8a989d; font-size: 10px; line-height: 1.6; }
 
 .chat-card { padding: 22px 22px 16px; }
 .tutor-controls { display: grid; gap: 6px; margin: 0 0 8px; }

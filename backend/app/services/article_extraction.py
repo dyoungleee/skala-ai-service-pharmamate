@@ -33,26 +33,34 @@ ARTICLE_BODY_SELECTORS = [
     '.article-view-content', '.article_view_content', '.article-body',
     '.article_body', '.news-view-content', '.article-content', '.article_view', 'article'
 ]
-ARTICLE_IMAGE_CAPTION_MARKERS = (
-    "caption", "imagedesc", "imagedescription", "photodesc", "photodescription",
-    "figuredesc", "figuredescription", "imgdesc", "imgdescription",
-    "사진설명", "이미지설명", "그림설명", "사진캡션", "이미지캡션", "그림캡션",
-)
+ARTICLE_IMAGE_CLASS_MARKERS = ("img", "image", "fig", "figure", "caption", "photo")
 
 
 def _is_image_caption_node(node) -> bool:
-    """Identify semantic image-caption elements without matching prose by content."""
+    """Match image-related class names without inspecting the element's prose."""
     if node.name == "figcaption":
         return True
 
-    values = []
-    for attribute in ("id", "class", "itemprop", "aria-label", "data-testid"):
-        value = node.get(attribute, [])
-        values.extend(value if isinstance(value, list) else [value])
-    descriptor = re.sub(r"[^a-z0-9가-힣]", "", " ".join(str(value) for value in values).lower())
-    if any(marker in descriptor for marker in ARTICLE_IMAGE_CAPTION_MARKERS):
-        return True
-    return bool(re.search(r"(?:사진|이미지|그림).{0,8}(?:설명|캡션)|(?:설명|캡션).{0,8}(?:사진|이미지|그림)", descriptor))
+    class_values = node.get("class", [])
+    if isinstance(class_values, str):
+        class_values = [class_values]
+    class_name = " ".join(class_values)
+    # Support hyphen/underscore-separated and camelCase class names, such as
+    # image-caption, photoDesc, and articleFigure.
+    token_source = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", class_name)
+    class_tokens = re.findall(r"[a-z0-9]+", token_source.lower())
+    has_image_marker = any(
+        token.startswith(ARTICLE_IMAGE_CLASS_MARKERS)
+        or token.endswith(ARTICLE_IMAGE_CLASS_MARKERS)
+        for token in class_tokens
+    )
+    if not has_image_marker:
+        return False
+
+    # A generic image class may be on a wrapper around real article prose.
+    if node.name != "p" and node.find("p") is not None:
+        return False
+    return True
 
 
 ARTICLE_NOISE_SELECTORS = [

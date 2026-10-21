@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 CATEGORIES = [
     "Modality", "Drug", "Target", "Biomarker", "Disease", "Clinical Trial",
     "Clinical Metric", "Regulatory", "Business", "Manufacturing", "Platform",
-    "Diagnostic", "Mechanism", "Technology",
+    "Diagnostic", "Mechanism", "Technology", "Other",
 ]
 
 
@@ -18,7 +18,7 @@ class PharmaTerm(BaseModel):
     category: Literal[
         "Modality", "Drug", "Target", "Biomarker", "Disease", "Clinical Trial",
         "Clinical Metric", "Regulatory", "Business", "Manufacturing", "Platform",
-        "Diagnostic", "Mechanism", "Technology",
+        "Diagnostic", "Mechanism", "Technology", "Other",
     ]
     reason: str = Field(description="이 용어를 배워야 하는 이유 한 문장")
     simple_definition: str = Field(description="비전공자가 이해할 수 있는 쉬운 한 문장 정의")
@@ -28,11 +28,14 @@ class PharmaTerm(BaseModel):
 
 class ArticleAnalysis(BaseModel):
     article_type: Literal[
-        "임상", "규제", "기술/플랫폼", "투자", "기술이전", "파트너십",
-        "사업/전략", "연구/학술", "산업동향", "기타",
+        "제약·바이오", "보건·정책", "국제", "임상", "규제", "기술/플랫폼", "투자", "기술이전", "파트너십",
+        "사업/전략", "연구/학술", "산업동향", "헬스케어·AI", "기타",
     ]
     one_line_summary: str = Field(description="기사를 쉽게 이해할 수 있게 핵심만 1~2문장")
     key_issue: str = Field(description="기업·기술·사건과 연결되는 업계 핵심 이슈 1~2문장")
     key_entities: list[str] = Field(description="기사 속 주요 기업, 신약 후보, 연구기관 등")
-    key_terms: list[PharmaTerm] = Field(description="재사용 가치가 높은 핵심 개념 3~5개")
+    key_terms: list[PharmaTerm] = Field(
+        max_length=20,
+        description="일반 독자에게 낯설고 기사 이해에 필요한 전문 개념. 자동 추출은 최대 5개, 사용자 추가를 포함해 최대 20개입니다.",
+    )
     confusing_points: list[str] = Field(description="읽을 때 혼동하기 쉬운 지점 최대 2개")

@@ -260,6 +260,33 @@ print(json.dumps(response.json(), ensure_ascii=False))
         self.assertIsNone(other["article"])
         self.assertEqual(other["turns"], [])
 
+    def test_session_article_accepts_and_persists_user_added_other_term(self):
+        session = self.client.post("/api/sessions").json()
+        headers = {"Authorization": f"Bearer {session['access_token']}"}
+        analyzed = self.client.post("/api/articles/analyze", json={
+            "pasted_text": "가상 기사에서 임상 1상 계획을 설명합니다. " * 10,
+        }).json()
+        analyzed["analysis"]["key_terms"].append({
+            "term": "사용자가 직접 선택한 개념",
+            "category": "Other",
+            "reason": "기사에서 직접 선택했습니다.",
+            "simple_definition": "",
+            "article_context": "가상 기사에서 사용자가 직접 고른 개념입니다.",
+            "aliases": [],
+        })
+
+        response = self.client.put(
+            f"/api/sessions/{session['session_id']}/article",
+            headers=headers,
+            json={"article": analyzed, "selected_term_key": "사용자가 직접 선택한 개념"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["article"]["analysis"]["key_terms"][-1]["category"],
+            "Other",
+        )
+
     def test_session_chat_history_is_isolated_by_selected_term(self):
         session = self.client.post("/api/sessions").json()
         session_id = session["session_id"]

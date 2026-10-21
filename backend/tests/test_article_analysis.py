@@ -18,8 +18,15 @@ class ArticleAnalysisPromptTests(unittest.TestCase):
         system_prompt = ARTICLE_ANALYSIS_PROMPT.messages[0].prompt.template
 
         self.assertIn("기관명과 약칭·현지어 정식 명칭은 학습 용어에서 제외", system_prompt)
-        self.assertIn("기관명으로 개수를 채우지 않습니다", system_prompt)
+        self.assertIn("0개도 허용", system_prompt)
         self.assertIn("임상 단계, 허가 절차", system_prompt)
+
+    def test_prompt_prioritizes_unfamiliar_specialized_terms_and_excludes_common_symptoms(self):
+        system_prompt = ARTICLE_ANALYSIS_PROMPT.messages[0].prompt.template
+
+        self.assertIn("일상에서 흔히 쓰고 일반 독자가 바로 이해할 수 있는 표현은 추출하지 않습니다", system_prompt)
+        self.assertIn("가슴 쓰림·속쓰림", system_prompt)
+        self.assertIn("재사용 가치가 있는 개념", system_prompt)
 
     def test_analysis_filter_removes_institution_name_and_alias_but_keeps_concepts(self):
         institution = (
@@ -52,6 +59,11 @@ class ArticleAnalysisPromptTests(unittest.TestCase):
                     simple_definition="환자에게 약의 효과와 안전성을 넓게 확인하는 단계입니다.",
                     article_context="후기 임상시험입니다.", aliases=["Phase 3"],
                 ),
+                PharmaTerm(
+                    term="가슴 쓰림", category="Disease", reason="일상적인 증상입니다.",
+                    simple_definition="가슴이 타는 듯한 느낌입니다.",
+                    article_context="부작용으로 언급됩니다.", aliases=["heartburn"],
+                ),
             ],
             confusing_points=[],
         )
@@ -64,6 +76,14 @@ class ArticleAnalysisPromptTests(unittest.TestCase):
 
         self.assertEqual([term.term for term in result.key_terms], ["의약품 품목 허가", "임상 3상"])
         self.assertEqual(result.key_entities, [institution])
+
+    def test_manual_term_can_use_other_category(self):
+        term = PharmaTerm(
+            term="사용자가 추가한 용어", category="Other", reason="직접 선택했습니다.",
+            simple_definition="", article_context="기사 문단에서 선택했습니다.", aliases=[],
+        )
+
+        self.assertEqual(term.category, "Other")
 
 
 if __name__ == "__main__":

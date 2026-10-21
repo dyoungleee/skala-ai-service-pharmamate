@@ -69,6 +69,7 @@ class ArticleExtractionTests(unittest.TestCase):
     def test_removes_image_captions_but_preserves_article_paragraphs(self):
         first_paragraph = "실제 본문 첫 문단 표식: 연구진은 후보물질의 개발 계획을 설명했습니다. " * 7
         final_paragraph = "실제 본문 마지막 문단 표식: 다음 단계에서는 안전성과 효과를 확인합니다. " * 7
+        wrapped_article_paragraph = "figure 영역 안에 있어도 보존해야 하는 실제 기사 문단입니다. " * 7
         html = f"""
         <html><body><div id="articleBody">
           <p>{first_paragraph}</p>
@@ -78,6 +79,11 @@ class ArticleExtractionTests(unittest.TestCase):
           </figure>
           <p class="article-image-description">이미지 설명 전용 문구: 후보물질의 작동 장면.</p>
           <div class="photo_desc">사진 설명 전용 문구: 실험 장면.</div>
+          <div class="figure-wrapper"><p>{wrapped_article_paragraph}</p></div>
+          <p class="image-caption">속성에 caption이 표시된 이미지 캡션입니다.</p>
+          <p class="figcaption">태그가 아닌 속성에 표시된 figcaption 문구입니다.</p>
+          <span class="photo-credit">사진 설명 크레딧 전용 문구.</span>
+          <p class="configuration-summary">설정 관련 실제 문단은 보존합니다.</p>
           <p>{final_paragraph}</p>
         </div></body></html>
         """
@@ -86,11 +92,16 @@ class ArticleExtractionTests(unittest.TestCase):
 
         self.assertEqual(method, "article_selector")
         self.assertIn(" ".join(first_paragraph.split()), article)
+        self.assertIn(" ".join(wrapped_article_paragraph.split()), article)
         self.assertIn(" ".join(final_paragraph.split()), article)
         self.assertLess(article.index("실제 본문 첫 문단 표식"), article.index("실제 본문 마지막 문단 표식"))
         self.assertNotIn("암세포를 찾아가는 과정", article)
         self.assertNotIn("이미지 설명 전용 문구", article)
         self.assertNotIn("사진 설명 전용 문구", article)
+        self.assertNotIn("속성에 caption이 표시된 이미지 캡션", article)
+        self.assertNotIn("속성에 표시된 figcaption 문구", article)
+        self.assertNotIn("사진 설명 크레딧 전용 문구", article)
+        self.assertIn("설정 관련 실제 문단은 보존합니다.", article)
         self.assertNotIn("캡션보다 우선하지 않는 대체 텍스트", article)
 
     def test_removes_image_credits_and_copyright_lines_without_losing_article_text(self):

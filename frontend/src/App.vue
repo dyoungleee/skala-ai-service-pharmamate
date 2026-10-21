@@ -12,7 +12,7 @@ const messages = ref([])
 const chatThreads = ref({})
 const restoredThreadTerms = ref([])
 const activeChatThreadKey = ref('')
-const studyMemoSections = ref({ concept: '', confusingQA: '', articleImportance: '', remember: '' })
+const studyNote = ref('')
 const memoDraftReady = ref(false)
 const studyRecords = ref([])
 const selectedRecordKey = ref('')
@@ -30,6 +30,10 @@ const currentStatus = ref('')
 const errorMessage = ref('')
 const saveMessage = ref('')
 const chatPanel = ref(null)
+const articleTextContainer = ref(null)
+const selectedArticleText = ref('')
+const articleTermMessage = ref('')
+const articleTermBusy = ref(false)
 let activeController = null
 const SESSION_STORAGE_KEY = 'pharmamate.sessions.v1'
 const STREAM_IDLE_TIMEOUT_MS = Number(import.meta.env.VITE_STREAM_IDLE_TIMEOUT_MS) || 120_000
@@ -43,11 +47,12 @@ const activeStepIndex = computed(() => steps.findIndex((step) => step.id === act
 const terms = computed(() => articleResult.value?.analysis?.key_terms ?? [])
 const currentTerm = computed(() => terms.value.find((item) => item.term === selectedTerm.value) ?? null)
 const tutorTerms = computed(() => {
-  const candidates = [
-    ...terms.value,
-    ...studyRecords.value.map((record) => ({ ...record, term: record.term_name })),
-    ...restoredThreadTerms.value,
-  ]
+  const candidates = articleResult.value
+    ? terms.value
+    : [
+        ...studyRecords.value.map((record) => ({ ...record, term: record.term_name })),
+        ...restoredThreadTerms.value,
+      ]
   const unique = new Map()
   for (const item of candidates) {
     const name = String(item.term || item.term_name || '').trim()
@@ -75,6 +80,7 @@ const selectedTutorQAs = computed(() => {
   return conversations.slice(-8)
 })
 const easyCategoryDescriptions = {
+  Other: '기사에서 직접 선택한 용어예요. AI Tutor에서 뜻과 중요성을 확인해 보세요.',
   Modality: '치료 효과를 내기 위해 사용하는 치료 방식이에요.',
   Drug: '질병을 치료하거나 조절하기 위해 개발하는 약이에요.',
   Target: '약이 찾아가거나 작용하도록 정해둔 목표물이에요.',
@@ -128,23 +134,7 @@ const recordCategoryLabels = {
   Platform: '플랫폼', Diagnostic: '진단', Mechanism: '작용 기전', Technology: '기술',
   Other: '기타',
 }
-const studyMemoSectionDefinitions = [
-  { key: 'concept', heading: '한 줄 개념' },
-  { key: 'confusingQA', heading: '헷갈렸던 부분 Q&A' },
-  { key: 'articleImportance', heading: '기사에서 중요한 이유' },
-  { key: 'remember', heading: '기억할 점' },
-]
-const selectedStudyMemoSections = computed(() => {
-  const note = selectedStudyRecord.value?.note || selectedStudyRecord.value?.simple_definition || ''
-  const sections = parseStudyMemoSections(note)
-  return studyMemoSectionDefinitions
-    .map((section) => ({ ...section, content: sections[section.key] }))
-    .filter((section) => section.content)
-})
-const canSave = computed(() => Boolean(
-  selectedTutorTerm.value && memoDraftReady.value
-  && studyMemoSectionDefinitions.some(({ key }) => studyMemoSections.value[key].trim()),
-))
+const canSave = computed(() => Boolean(selectedTutorTerm.value && memoDraftReady.value && studyNote.value.trim()))
 const starterQuestions = [
   { label: '쉽게 비유해줘', question: '이 용어를 일상적인 예로 쉽게 비유해줘.' },
   { label: '기사에서 왜 중요해?', question: '이 용어가 기사에서 왜 중요하게 다뤄졌는지 설명해줘.' },
@@ -181,14 +171,19 @@ const articleSegments = computed(() => {
     alias.normalize('NFKC').toLocaleLowerCase(), term,
   ]))
   const segments = []
+  const highlightedTermKeys = new Set()
   let cursor = 0
   for (const match of article.matchAll(pattern)) {
     if (match.index > cursor) segments.push({ text: article.slice(cursor, match.index), status: '', title: '' })
     const term = matchLookup.get(match[0].normalize('NFKC').toLocaleLowerCase())
+    const termKey = termStorageKey(term?.term)
+    const isFirstOccurrence = Boolean(termKey) && !highlightedTermKeys.has(termKey)
+    if (isFirstOccurrence) highlightedTermKeys.add(termKey)
     segments.push({
       text: match[0],
-      status: isKnownTerm(term) ? 'known' : 'new',
-      title: term?.simple_definition || term?.term || '',
+      status: isFirstOccurrence ? (isKnownTerm(term) ? 'known' : 'new') : '',
+      title: isFirstOccurrence ? (term?.simple_definition || term?.term || '') : '',
+      term: isFirstOccurrence ? (term?.term || '') : '',
     })
     cursor = match.index + match[0].length
   }
@@ -273,13 +268,129 @@ function switchTutorTerm(termName, force = false) {
   activeChatThreadKey.value = nextKey
   tutorTerm.value = nextName
   messages.value = [...(chatThreads.value[nextKey] || [])]
-  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
+  studyNote.value = ''
   memoDraftReady.value = false
   saveMessage.value = ''
 }
 
 function selectStarterQuestion(prompt) {
   question.value = prompt
+  document.querySelector('#question-input')?.focus()
+}
+
+function captureArticleTermSelection() {
+  const selection = window.getSelection()
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null
+  const container = articleTextContainer.value
+  const text = String(selection?.toString() || '').replace(/\s+/g, ' ').trim()
+  if (!container || !range || !text || !container.contains(range.commonAncestorContainer)) {
+    selectedArticleText.value = ''
+    return
+  }
+  selectedArticleText.value = text
+  articleTermMessage.value = text.length < 2 || text.length > 70
+    ? '용어는 2~70자로 선택해 주세요.'
+    : ''
+}
+
+function getArticleTermContext(termName) {
+  const article = String(articleResult.value?.article || '')
+  const paragraph = article.split(/\n+/).map((line) => line.trim()).find((line) => line.includes(termName))
+  if (paragraph) return paragraph.slice(0, 700)
+  const index = article.toLocaleLowerCase().indexOf(termName.toLocaleLowerCase())
+  if (index < 0) return `기사 원문에서 사용자가 직접 선택한 용어입니다: ${termName}`
+  return article.slice(Math.max(0, index - 140), Math.min(article.length, index + termName.length + 240))
+    .replace(/\s+/g, ' ').trim().slice(0, 700)
+}
+
+async function updateArticleTerms(nextTerms, { selectedName = selectedTerm.value, tutorName = tutorTerm.value } = {}) {
+  if (!articleResult.value || articleTermBusy.value) return false
+  const updatedArticle = {
+    ...articleResult.value,
+    analysis: { ...articleResult.value.analysis, key_terms: nextTerms },
+  }
+  const termKey = (name) => termStorageKey(name)
+  const nextSelected = nextTerms.find((term) => termKey(term.term) === termKey(selectedName)) || nextTerms[0]
+  const nextSelectedName = nextSelected?.term || ''
+  const nextTutor = nextTerms.find((term) => termKey(term.term) === termKey(tutorName))
+    || nextTerms.find((term) => termKey(term.term) === termKey(nextSelectedName))
+  articleTermBusy.value = true
+  try {
+    await sessionRequest(`/api/sessions/${sessionId.value}/article`, {
+      method: 'PUT',
+      body: JSON.stringify({ article: updatedArticle, selected_term_key: nextSelectedName }),
+    })
+    articleResult.value = updatedArticle
+    selectedTerm.value = nextSelectedName
+    const nextTutorName = nextTutor?.term || ''
+    if (termKey(nextTutorName) !== termKey(tutorTerm.value)) switchTutorTerm(nextTutorName, true)
+    return true
+  } catch (error) {
+    errorMessage.value = `용어 목록을 저장하지 못했습니다. ${error.message}`
+    return false
+  } finally {
+    articleTermBusy.value = false
+  }
+}
+
+async function addSelectedArticleTerm() {
+  const termName = selectedArticleText.value.trim()
+  if (!termName || termName.length < 2 || termName.length > 70 || articleTermBusy.value || busy.value) return
+  const selectedKey = termStorageKey(termName)
+  const alreadyAdded = terms.value.some((term) => termAliases(term)
+    .some((alias) => termStorageKey(alias) === selectedKey))
+  if (alreadyAdded) {
+    articleTermMessage.value = '이미 용어 목록에 있는 표현입니다.'
+    return
+  }
+  if (terms.value.length >= 20) {
+    articleTermMessage.value = '용어는 기사당 최대 20개까지 추가할 수 있습니다.'
+    return
+  }
+  const newTerm = {
+    term: termName,
+    category: 'Other',
+    reason: '기사에서 사용자가 직접 선택한 용어입니다.',
+    simple_definition: '',
+    article_context: getArticleTermContext(termName),
+    aliases: [],
+  }
+  const saved = await updateArticleTerms([...terms.value, newTerm], {
+    selectedName: termName,
+    tutorName: termName,
+  })
+  if (saved) {
+    selectedArticleText.value = ''
+    articleTermMessage.value = `“${termName}” 용어를 추가했습니다. AI Tutor에서 의미를 질문할 수 있습니다.`
+    window.getSelection()?.removeAllRanges()
+  }
+}
+
+async function removeArticleTerm(termName) {
+  if (articleTermBusy.value || busy.value) return
+  const removedKey = termStorageKey(termName)
+  const nextTerms = terms.value.filter((term) => termStorageKey(term.term) !== removedKey)
+  if (nextTerms.length === terms.value.length) return
+  const fallbackName = nextTerms[0]?.term || ''
+  const nextSelectedName = termStorageKey(selectedTerm.value) === removedKey ? fallbackName : selectedTerm.value
+  const nextTutorName = termStorageKey(tutorTerm.value) === removedKey ? fallbackName : tutorTerm.value
+  const saved = await updateArticleTerms(nextTerms, {
+    selectedName: nextSelectedName,
+    tutorName: nextTutorName,
+  })
+  if (saved) {
+    articleTermMessage.value = `“${termName}” 용어를 현재 기사에서 제외했습니다.`
+    if (termStorageKey(selectedArticleText.value) === removedKey) selectedArticleText.value = ''
+  }
+}
+
+async function openArticleTermInTutor(termName) {
+  const name = String(termName || '').trim()
+  if (!name || busy.value) return
+  selectedTerm.value = name
+  switchTutorTerm(name)
+  goToStep('tutor')
+  await nextTick()
   document.querySelector('#question-input')?.focus()
 }
 
@@ -294,12 +405,12 @@ function buildStudyNoteDraft() {
       `Q. ${String(asked).slice(0, 200)}\nA. ${String(answer).slice(0, 500)}`
     )).join('\n\n')
     : '아직 이 용어에 연결된 질문과 답변이 없습니다.'
-  studyMemoSections.value = {
-    concept: definition,
-    confusingQA: qaSection,
-    articleImportance: articleContext,
-    remember,
-  }
+  studyNote.value = [
+    '한 줄 개념', definition,
+    '', '헷갈렸던 부분 Q&A', qaSection,
+    '', '기사에서 중요한 이유', articleContext,
+    '', '기억할 점', remember,
+  ].join('\n').slice(0, 7900)
   memoDraftReady.value = true
   saveMessage.value = ''
 }
@@ -321,38 +432,12 @@ function formatRecordDate(value) {
   })
 }
 
-function cleanStudyMemoText(value) {
-  return String(value || '')
+function displayStudyNote(record) {
+  return String(record?.note || record?.simple_definition || '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^[-*]\s+/gm, '• ')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .trim()
-}
-
-function parseStudyMemoSections(value) {
-  const sections = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
-  const headingKeys = new Map(studyMemoSectionDefinitions.map(({ key, heading }) => [heading, key]))
-  let activeKey = ''
-  let foundHeading = false
-  for (const line of String(value || '').split(/\r?\n/)) {
-    const key = headingKeys.get(line.trim())
-    if (key) {
-      activeKey = key
-      foundHeading = true
-      continue
-    }
-    if (activeKey) sections[activeKey] += `${sections[activeKey] ? '\n' : ''}${line}`
-  }
-  if (!foundHeading) sections.concept = cleanStudyMemoText(value)
-  for (const key of Object.keys(sections)) sections[key] = cleanStudyMemoText(sections[key])
-  return sections
-}
-
-function serializeStudyMemo() {
-  return studyMemoSectionDefinitions
-    .map(({ key, heading }) => `${heading}\n${studyMemoSections.value[key].trim()}`)
-    .join('\n\n')
-    .slice(0, 7900)
 }
 
 function selectStudyRecord(record) {
@@ -379,6 +464,8 @@ function isStepComplete(stepId) {
 
 function restoreSnapshot(snapshot) {
   articleResult.value = snapshot.article
+  selectedArticleText.value = ''
+  articleTermMessage.value = ''
   selectedRecordKey.value = ''
   const savedTerm = snapshot.turns.at(-1)?.term_name
   const selectedByKey = terms.value.find((term) => termStorageKey(term.term) === snapshot.selected_term_key)?.term
@@ -406,7 +493,7 @@ function restoreSnapshot(snapshot) {
   tutorTerm.value = savedTerm || selectedTerm.value
   activeChatThreadKey.value = termStorageKey(tutorTerm.value)
   messages.value = [...(groupedThreads[activeChatThreadKey.value] || [])]
-  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
+  studyNote.value = ''
   memoDraftReady.value = false
   saveMessage.value = ''
   readMessage.value = ''
@@ -421,11 +508,7 @@ async function activateSession(credentials) {
   persistSessionChoices()
   restoreSnapshot(snapshot)
   await refreshRecords()
-  const savedNote = selectedTutorTerm.value?.note || ''
-  if (savedNote) {
-    studyMemoSections.value = parseStudyMemoSections(savedNote)
-    memoDraftReady.value = true
-  }
+  studyNote.value = selectedTutorTerm.value?.note || ''
   await refreshReadingLists()
   currentStatus.value = '저장된 학습 세션을 불러왔습니다.'
 }
@@ -509,6 +592,8 @@ async function analyzeArticle() {
   errorMessage.value = ''
   saveMessage.value = ''
   readMessage.value = ''
+  selectedArticleText.value = ''
+  articleTermMessage.value = ''
   selectedIssueId.value = ''
   const articleText = pastedText.value.trim()
   if (!url.value.trim() && !articleText) {
@@ -623,7 +708,7 @@ async function sendQuestion(questionOverride = '') {
   errorMessage.value = ''
   saveMessage.value = ''
   const selected = selectedTutorTerm.value
-  studyMemoSections.value = { concept: '', confusingQA: '', articleImportance: '', remember: '' }
+  studyNote.value = ''
   memoDraftReady.value = false
   messages.value.push({ role: 'user', content: asked })
   const assistantMessage = {
@@ -690,7 +775,7 @@ async function saveStudyRecord() {
           article_context: selectedTutorTerm.value.article_context || '',
           aliases: selectedTutorTerm.value.aliases || [],
         },
-        note: serializeStudyMemo(),
+        note: studyNote.value,
       }),
     })
     saveMessage.value = result.message
@@ -803,7 +888,6 @@ initializeSession()
           </div>
           <label class="field-label" for="article-url">기사 URL</label>
           <input id="article-url" v-model="url" class="text-input" type="url" placeholder="https://news.example.com/article" />
-          <p class="field-hint">URL로 분석하면 페이지의 기사 제목과 본문을 가져옵니다.</p>
           <details class="paste-details">
             <summary>기사 본문을 직접 붙여넣기</summary>
             <textarea v-model="pastedText" class="text-input article-textarea" rows="5" placeholder="URL에서 본문을 가져오기 어렵다면 기사 본문을 붙여넣으세요."></textarea>
@@ -826,13 +910,27 @@ initializeSession()
             <span><i class="term-swatch term-swatch-new"></i>새 용어</span>
             <span><i class="term-swatch term-swatch-known"></i>저장한 용어</span>
           </div>
-          <div class="article-reading-text" aria-label="기사 전체 원문">
+          <div ref="articleTextContainer" class="article-reading-text" aria-label="기사 전체 원문"
+            @mouseup="captureArticleTermSelection" @keyup="captureArticleTermSelection" @touchend="captureArticleTermSelection">
             <template v-for="(segment, index) in articleSegments" :key="index">
-              <mark v-if="segment.status" :class="`term-highlight-${segment.status}`" :title="segment.title">{{ segment.text }}</mark>
+              <button v-if="segment.status" type="button" class="article-term-button"
+                :aria-label="`${segment.text} 용어를 AI Tutor에서 학습하기`"
+                :title="`${segment.title} · 눌러서 AI Tutor에서 질문하기`"
+                :disabled="busy" @click="openArticleTermInTutor(segment.term)">
+                <mark :class="`term-highlight-${segment.status}`">{{ segment.text }}</mark>
+              </button>
               <span v-else>{{ segment.text }}</span>
             </template>
           </div>
-          <p class="reading-note">노란색은 현재 학습 기록에 없는 용어, 초록색은 이 세션에서 이미 저장한 용어입니다. 용어를 저장하면 표시가 자동으로 바뀝니다.</p>
+          <div class="article-term-edit-bar">
+            <p>원문에서 낯선 용어를 드래그해 추가하거나, 용어 옆 ×로 현재 기사 목록에서 제외할 수 있습니다. 기사당 최대 20개까지 관리할 수 있습니다.</p>
+            <div v-if="selectedArticleText" class="article-term-selection">
+              <span>선택한 문구 <strong>{{ selectedArticleText }}</strong></span>
+              <button type="button" class="button button-secondary" :disabled="busy || articleTermBusy || selectedArticleText.length < 2 || selectedArticleText.length > 70"
+                @click="addSelectedArticleTerm">용어로 추가</button>
+            </div>
+            <p v-if="articleTermMessage" class="article-term-message" role="status">{{ articleTermMessage }}</p>
+          </div>
         </section>
 
         <section v-if="articleResult" class="card briefing-card">
@@ -851,21 +949,26 @@ initializeSession()
           <div class="term-section">
             <div class="term-section-heading"><span class="mini-label">이 기사에서 알아둘 핵심 용어</span><span>{{ terms.length }}개</span></div>
             <div class="term-list">
-              <button v-for="term in terms" :key="term.term" class="term-chip"
-                :class="[isKnownTerm(term) ? 'term-chip-known' : 'term-chip-new', { 'term-chip-active': selectedTerm === term.term }]"
-                @click="selectedTerm = term.term">
-                {{ term.term }} <small>{{ isKnownTerm(term) ? '복습' : '새 용어' }}</small>
-              </button>
+              <div v-for="term in terms" :key="term.term" class="term-chip-item"
+                :class="[isKnownTerm(term) ? 'term-chip-known' : 'term-chip-new', { 'term-chip-active': selectedTerm === term.term }]">
+                <button type="button" class="term-chip" :aria-pressed="selectedTerm === term.term"
+                  :disabled="busy || articleTermBusy" @click="selectedTerm = term.term">
+                  {{ term.term }} <small>{{ isKnownTerm(term) ? '복습' : '새 용어' }}</small>
+                </button>
+                <button type="button" class="term-chip-remove" :aria-label="`${term.term}를 현재 기사 용어에서 제외`"
+                  :title="'현재 기사에서 용어 제외'" :disabled="busy || articleTermBusy"
+                  @click="removeArticleTerm(term.term)">×</button>
+              </div>
             </div>
+            <p v-if="!terms.length" class="term-list-empty">추출된 용어가 없습니다. 원문에서 드래그해 직접 추가할 수 있습니다.</p>
             <div v-if="currentTerm" class="selected-term-card">
-              <div class="selected-term-top"><strong>{{ currentTerm.term }}</strong><span>{{ currentTerm.category }}</span></div>
-              <p>{{ currentTerm.simple_definition }}</p>
+              <div class="selected-term-top"><strong>{{ currentTerm.term }}</strong><span>{{ currentTerm.category === 'Other' ? '기타' : currentTerm.category }}</span></div>
+              <p>{{ currentTerm.simple_definition || '직접 추가한 용어입니다. AI Tutor에서 질문해 의미를 확인해 보세요.' }}</p>
               <small>이 기사에서는 · {{ currentTerm.article_context }}</small>
             </div>
           </div>
           <div class="read-actions">
             <label class="field-label" for="issue-group">읽은 기사를 이슈에 묶기 <span>선택</span></label>
-            <p class="field-hint">저장할 때 현재 세션의 기존 이슈와 기업·사건 종류·임상 단계를 비교합니다. 일치하는 이슈가 없으면 새 이슈를 만듭니다.</p>
             <select id="issue-group" v-model="selectedIssueId" class="text-input" :disabled="busy">
               <option value="">자동으로 판단</option>
               <option v-for="issue in industryIssues" :key="issue.issue_id" :value="issue.issue_id">
@@ -902,12 +1005,11 @@ initializeSession()
                 {{ term.term }}{{ isKnownTerm(term) ? ' · 학습 기록 있음' : '' }}
               </option>
             </select>
-            <span class="thread-hint">{{ tutorTerm ? `${tutorTerm} 대화` : '일반 대화' }}는 다른 용어 대화와 분리되어 이어집니다.</span>
           </div>
           <section v-if="selectedTutorTerm" class="term-guide" aria-label="용어 빠른 정리">
             <div class="term-guide-heading">
               <div><span class="mini-label">QUICK STUDY</span><h3>{{ selectedTutorTerm.term }} 빠른 정리</h3></div>
-              <span>{{ selectedTutorTerm.category }}</span>
+              <span>{{ selectedTutorTerm.category === 'Other' ? '기타' : selectedTutorTerm.category }}</span>
             </div>
             <article v-for="(item, index) in selectedTermGuide" :key="item.label" class="term-guide-row">
               <span class="term-guide-number">{{ index + 1 }}</span>
@@ -919,7 +1021,7 @@ initializeSession()
             <div v-if="!messages.length" class="empty-chat">
               <div class="empty-icon">✳</div>
               <strong>{{ tutorTerm ? `${tutorTerm}부터 알아볼까요?` : '어떤 내용이 궁금한가요?' }}</strong>
-              <p>원리와 기사에서 확인된 사실을 나눠 설명합니다. 첫 질문은 아래 시작 질문에서 골라보세요.</p>
+              <p>원리와 기사에서 확인된 사실을 나눠 설명합니다.</p>
               <div class="starter-questions">
                 <button v-for="item in starterQuestions" :key="item.label" type="button"
                   @click="selectStarterQuestion(item.question)">{{ item.label }}</button>
@@ -984,13 +1086,8 @@ initializeSession()
             대화를 반영한 학습 메모 만들기 <span aria-hidden="true">✎</span>
           </button>
           <template v-if="memoDraftReady">
-            <p class="field-label">학습 메모 초안 <span>각 항목의 설명을 자유롭게 수정할 수 있어요</span></p>
-            <div class="memo-sections-editor">
-              <section v-for="section in studyMemoSectionDefinitions" :key="section.key" class="memo-section-editor">
-                <label class="memo-section-heading" :for="`memo-${section.key}`">{{ section.heading }}</label>
-                <textarea :id="`memo-${section.key}`" v-model="studyMemoSections[section.key]" class="text-input memo-section-input" :rows="section.key === 'confusingQA' ? 5 : 3" maxlength="7900"></textarea>
-              </section>
-            </div>
+            <label class="field-label" for="study-note">학습 메모 초안 <span>자유롭게 수정할 수 있어요</span></label>
+            <textarea id="study-note" v-model="studyNote" class="text-input note-input" rows="14" maxlength="8000"></textarea>
             <button class="button button-primary button-wide" :disabled="!canSave || busy" @click="saveStudyRecord">
               이 용어 학습 기록 저장 <span aria-hidden="true">↓</span>
             </button>
@@ -1046,7 +1143,6 @@ initializeSession()
             <div class="record-note-body">{{ displayStudyNote(selectedStudyRecord) }}</div>
             <p class="privacy-note">{{ recordCategoryLabel(selectedStudyRecord.category) }} · 관련 대화 {{ selectedStudyRecord.qa_count }}건</p>
           </section>
-          <p class="privacy-note">기록은 현재 학습 세션의 로컬 SQLite에 저장되며, 같은 분야 안에서 최근 저장한 용어부터 표시됩니다.</p>
         </section>
 
         <section class="card issues-card">
