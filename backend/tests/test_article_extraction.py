@@ -120,6 +120,30 @@ class ArticleExtractionTests(unittest.TestCase):
         self.assertEqual(lead_document["subtitle"], "")
         self.assertIn("실제 첫 문단 리드문입니다.", lead_document["body"])
 
+    def test_multiple_prebody_decks_and_headings_are_excluded_from_body(self):
+        body_text = "실제 기사 본문 첫 문단으로 보존되어야 하는 문장입니다. " * 12
+        html = f"""
+        <html><body><h1>복수 부제목이 있는 기사</h1>
+          <div id="articleBody">
+            <div class="article-sub-tit">임상 3상 주요 지표 충족</div>
+            <h3>후속 허가 절차를 준비할 예정</h3>
+            <p>{body_text}</p>
+            <p>두 번째 본문 문단입니다. {body_text}</p>
+          </div>
+        </body></html>
+        """
+
+        document = extract_article_document(BeautifulSoup(html, "html.parser"))
+
+        self.assertEqual(
+            document["subtitle"],
+            "임상 3상 주요 지표 충족\n후속 허가 절차를 준비할 예정",
+        )
+        self.assertTrue(document["body"].startswith("실제 기사 본문 첫 문단"))
+        self.assertNotIn("임상 3상 주요 지표 충족", document["body"])
+        self.assertNotIn("후속 허가 절차를 준비할 예정", document["body"])
+        self.assertIn("두 번째 본문 문단", document["body"])
+
     def test_url_loading_returns_subtitle_in_metadata_and_body_separately(self):
         subtitle = "기업은 신약 후보물질의 임상 개발을 이어간다"
         body_text = "본문에서 실제로 확인되는 개발 계획과 임상 내용입니다. " * 12

@@ -36,8 +36,9 @@ ARTICLE_BODY_SELECTORS = [
 ]
 ARTICLE_IMAGE_CLASS_MARKERS = ("img", "image", "fig", "figure", "caption", "photo")
 ARTICLE_SUBTITLE_MARKER_PATTERN = re.compile(
-    r"\bsub\s*title\b|\bsubheadline\b|\bsub\s*head(?:line)?\b|\bdeck\b|\bdek\b|"
-    r"\b(?:article|news)\s+summary\b|\b(?:summary|summury)\b",
+    r"\bsub\s*title\b|\bsub\s*tit\b|\bsubheadline\b|\bsub\s*head(?:line)?\b|"
+    r"\bdeck\b|\bdek\b|\bstrapline\b|\bstandfirst\b|"
+    r"\b(?:article|news|headline)\s+summary\b|\b(?:summary|summury)\b",
     re.IGNORECASE,
 )
 
@@ -245,7 +246,7 @@ def _subtitle_text(node, title: str) -> str:
     return text
 
 
-def _page_subtitle_node(soup, title: str):
+def _page_subtitle_nodes(soup, title: str):
     title_node = soup.find("h1")
     ordered_nodes = soup.find_all(True)
     positions = {id(node): index for index, node in enumerate(ordered_nodes)}
@@ -269,6 +270,21 @@ def _page_subtitle_node(soup, title: str):
             return first_paragraph is None or node_position <= positions.get(id(first_paragraph), body_position)
         return node_position < body_position
 
+    candidates = []
+
+    def add_candidate(node) -> None:
+        if node is None or any(parent in candidates for parent in node.parents):
+            return
+        text = _subtitle_text(node, title)
+        if not text:
+            return
+        # Prefer a surrounding subtitle block over one of its nested headings,
+        # so the same deck is not stored twice.
+        nested = [candidate for candidate in candidates if candidate in node.descendants]
+        for candidate in nested:
+            candidates.remove(candidate)
+        candidates.append(node)
+
     for node in ordered_nodes:
         if not _has_subtitle_marker(node) or _is_image_caption_node(node):
             continue
@@ -280,8 +296,7 @@ def _page_subtitle_node(soup, title: str):
             continue
         if node.select_one(", ".join(ARTICLE_BODY_SELECTORS)) is not None:
             continue
-        if _subtitle_text(node, title):
-            return node
+        add_candidate(node)
 
     # An unmarked h2 directly beside the headline is a common publisher deck.
     # Only inspect the headline's siblings before body text begins; never promote
@@ -296,31 +311,49 @@ def _page_subtitle_node(soup, title: str):
                 continue
             if _is_byline_node(sibling):
                 continue
-            h2_candidate = sibling if sibling.name == "h2" else sibling.find("h2")
-            if h2_candidate and appears_before_body(h2_candidate) and _subtitle_text(h2_candidate, title):
-                return h2_candidate
+            heading_candidate = sibling if sibling.name in {"h2", "h3", "h4"} else sibling.find(["h2", "h3", "h4"])
+            if heading_candidate and appears_before_body(heading_candidate):
+                add_candidate(heading_candidate)
+                continue
             if sibling.select_one(", ".join(ARTICLE_BODY_SELECTORS)) is not None:
                 break
-            if sibling.name in {"p", "h2", "h3", "article"}:
+            if sibling.name in {"p", "article"}:
                 break
             if sibling.get_text(" ", strip=True):
                 break
-    return None
+
+    # Some publishers put deck headings at the top of the article-body element.
+    # Only headings before the first paragraph qualify. The first paragraph itself
+    # remains the article lead and is never promoted to subtitle here.
+    if body_node is not None:
+        first_paragraph = body_node.find("p")
+        first_paragraph_position = positions.get(id(first_paragraph), len(ordered_nodes))
+        for heading in body_node.find_all(["h2", "h3", "h4"]):
+            if positions.get(id(heading), len(ordered_nodes)) >= first_paragraph_position:
+                break
+            if not _is_image_caption_node(heading):
+                add_candidate(heading)
+
+    return sorted(candidates, key=lambda node: positions.get(id(node), len(ordered_nodes)))
 
 
 def extract_article_document(soup) -> dict[str, str]:
     """Return separated title, subtitle, and body fields from a publisher page."""
     title = _page_title(soup)
     title_node = soup.find("h1")
-    subtitle_node = _page_subtitle_node(soup, title)
-    subtitle = _subtitle_text(subtitle_node, title)
+    subtitle_nodes = _page_subtitle_nodes(soup, title)
+    subtitle_parts = list(dict.fromkeys(
+        text for node in subtitle_nodes if (text := _subtitle_text(node, title))
+    ))
+    subtitle = "\n".join(subtitle_parts)
 
     # Some publishers place the headline and deck inside the same article root.
     # Remove only those identified nodes, leaving duplicated lead copy untouched.
     if title_node is not None and title_node.parent is not None:
         title_node.decompose()
-    if subtitle_node is not None and subtitle_node.parent is not None:
-        subtitle_node.decompose()
+    for subtitle_node in subtitle_nodes:
+        if subtitle_node.parent is not None:
+            subtitle_node.decompose()
 
     body, method = extract_article_text(soup)
     # A publisher may duplicate its headline as plain text inside the chosen
