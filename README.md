@@ -159,7 +159,9 @@ skala-ai-service-pharmamate/
 
 **검증:** 라우팅 합성 질문 24개에서 기존 설정은 23/24, 개선 설정은 24/24를 맞혔습니다. p50은 `1,152ms → 1,046ms`였고 토큰 사용은 소폭 증가했습니다. 따라서 이 평가에서 비용 절감은 확인되지 않았습니다. [Query Routing 평가](docs/experiments/F8_1_query_routing.md).
 
-**화면 캡처:** AI Tutor 화면 캡처를 받으면 여기에 삽입합니다.
+**화면 캡처:** 선택 용어의 Quick Study와 실제 Tutor 질문·답변이 함께 보이는 화면입니다.
+
+![AI Tutor의 선택 용어 Quick Study와 질문·답변 화면](docs/experiments/assets/F5_2_ai_tutor_qa.png)
 
 ### 5.3 LangGraph 역할별 처리와 동시 검색
 
