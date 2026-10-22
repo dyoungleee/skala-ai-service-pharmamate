@@ -152,7 +152,7 @@ def main() -> int:
         help="기준선 실행기 package.module:function",
     )
     parser.add_argument(
-        "--candidate-runner", default="eval.runners.pharmamate_notebook:run_candidate",
+        "--candidate-runner", default="eval.runners.pharmamate_v3:run_candidate",
         help="개선 후보 실행기 package.module:function",
     )
     parser.add_argument(
@@ -184,8 +184,10 @@ def main() -> int:
     print("PharmaMate 답변 비교" + (" — DEMO (고정 예시, LLM 미호출)" if args.demo else ""))
     if not args.demo:
         print(f"기준선 ref: {args.baseline_ref} ({baseline_commit[:12]})")
+        print("개선 후보: PharmaMate 3.0 FastAPI/LangGraph (현재 작업 트리)")
     else:
         print(f"기준선 ref: {args.baseline_ref}")
+        print("개선 후보: 고정 예시 (실제 모델 실행 아님)")
     print(f"평가 사례: {len(selected)}개")
 
     for case in selected:
