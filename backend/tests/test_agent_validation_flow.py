@@ -82,11 +82,14 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertEqual(result["answer_attempts"], 1)
         self.assertEqual(result["validation_status"], "unavailable")
         self.assertIn("검증을 완료하지 못해", result["answer"])
+        self.assertEqual(len(result["recommendations"]), 3)
+        self.assertIn("공식 자료", result["recommendations"][1]["question"])
 
     def test_unresolved_unsupported_answer_falls_back_after_one_rewrite(self):
         graph = build_graph(["임상 성공률은 87%입니다.", "임상 성공률은 87%입니다."])
         result = graph.invoke({
             "question": "임상 성공률은?",
+            "term": "임상 성공률",
             "article": "가상 자료: 유효성 결과는 포함되어 있지 않다.",
         })
         self.assertEqual(result["answer_attempts"], 2)
@@ -94,7 +97,14 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertEqual(result["validation_status"], "insufficient_evidence")
         self.assertNotIn("87%", result["answer"])
         self.assertIn("단정하지 않겠습니다", result["answer"])
-        self.assertEqual(result["recommendations"], [])
+        self.assertEqual(len(result["recommendations"]), 3)
+        self.assertEqual(
+            [item["category"] for item in result["recommendations"]],
+            ["원리 심화", "다른 개념과 연결", "한계·응용 탐구"],
+        )
+        self.assertIn("임상 성공률", result["recommendations"][0]["question"])
+        self.assertIn("공식 자료", result["recommendations"][1]["question"])
+        self.assertIn("확인된 내용", result["recommendations"][2]["question"])
 
     def test_memory_web_sources_run_concurrently_and_both_reach_answer(self):
         rendezvous = threading.Barrier(2, timeout=2)

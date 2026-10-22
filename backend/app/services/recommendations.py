@@ -84,6 +84,42 @@ def fallback_recommendations(
     ]
 
 
+def insufficient_evidence_recommendations(term: str = "") -> list[dict[str, str]]:
+    """Provide next steps that do not assume unsupported facts are true."""
+    topic = _clean(term, 48)
+    if topic:
+        principle_question = (
+            f"{topic}의 일반적으로 알려진 원리와 현재 자료에서 확인된 사실을 구분해서 설명해줘."
+        )
+        source_question = (
+            f"질문한 {topic}: 관련 개념과 공식 자료에서 어떤 점을 확인해 볼 수 있어?"
+        )
+    else:
+        principle_question = (
+            "이 질문과 관련된 일반 개념과 현재 자료에서 확인된 사실을 구분해서 설명해줘."
+        )
+        source_question = (
+            "이 질문을 이해하거나 검증하는 데 도움이 되는 관련 개념과 공식 자료는 무엇이야?"
+        )
+    return [
+        {
+            "category": "원리 심화",
+            "question": principle_question,
+            "learning_goal": "일반 개념과 이 자료에서 확인된 사실을 구분합니다.",
+        },
+        {
+            "category": "다른 개념과 연결",
+            "question": source_question,
+            "learning_goal": "주장을 검증할 출처와 확인 항목을 찾습니다.",
+        },
+        {
+            "category": "한계·응용 탐구",
+            "question": "현재 기사·학습 기록에서 확인된 내용과 추가 근거가 필요한 부분을 나눠줘.",
+            "learning_goal": "확인된 정보와 미확인 정보를 구분합니다.",
+        },
+    ]
+
+
 def build_recommendation_generator(model: Any) -> Callable[[dict[str, Any]], Any]:
     """같은 구조화 추천 프롬프트를 Gradio와 실험 CLI에서 사용합니다."""
     prompt = ChatPromptTemplate.from_messages([

@@ -20,6 +20,7 @@ from backend.app.agents.validator import build_answer_validator, validate_answer
 from backend.app.services.recommendations import (
     LearningTurnResponse,
     fallback_recommendations,
+    insufficient_evidence_recommendations,
     recommend_learning_questions,
 )
 
@@ -417,11 +418,18 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
             )
             return {
                 "answer": answer,
-                "recommendations": [],
+                "recommendations": insufficient_evidence_recommendations(
+                    (state.get("term", "").splitlines() or [""])[0]
+                ),
                 "validation_status": "insufficient_evidence",
                 "validation_feedback": "수정 1회 후에도 근거가 충분하지 않아 답변을 보수적으로 제한했습니다.",
             }
-        return {"answer": answer, "recommendations": []}
+        return {
+            "answer": answer,
+            "recommendations": insufficient_evidence_recommendations(
+                (state.get("term", "").splitlines() or [""])[0]
+            ),
+        }
 
     def after_validation(state: AgentState) -> str:
         status = state.get("validation_status", "unavailable")
