@@ -1,5 +1,11 @@
 # EVIDENCE-01 동일 입력 실제 비교 실행
 
+## 터미널 실행 캡처
+
+아래 이미지는 평가 스크립트의 실제 실행 stdout를 터미널 형식으로 정리한 것입니다.
+
+![EVIDENCE-01 실제 비교 실행 출력](assets/F8_before_after_terminal.png)
+
 ## 실행 조건
 
 - 실행일: 2026-10-22 (KST)

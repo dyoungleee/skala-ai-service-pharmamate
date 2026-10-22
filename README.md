@@ -439,9 +439,7 @@ npm run dev --prefix frontend
 
 2026-10-22에 `eval/compare_answers.py`로 합성 질문 하나를 실제 실행한 stdout입니다. 고정 예시를 출력하는 `--demo`는 사용하지 않았습니다. 비교 결과는 단일 실행이므로 일반적인 평균 성능을 뜻하지 않습니다.
 
-![EVIDENCE-01을 2.2 기준선과 3.0 백엔드에 실행한 실제 터미널 출력](docs/experiments/assets/F8_before_after_terminal.png)
-
-[실행 stdout 로그](docs/experiments/assets/F8_before_after_terminal_stdout.log) · [실험 조건과 결과](docs/experiments/F8_before_after_execution.md)
+[실제 비교 실험 문서 — 실행 캡처·stdout 로그·조건과 결과](docs/experiments/F8_before_after_execution.md)
 
 현재 답변 복구 로직의 상한은 같은 근거에 대한 답변 수정 1회, 전체 웹 검색 2회입니다. 검색 보강으로 새 공식 근거가 확인되어야 답변을 다시 생성합니다. 이 상한은 설정값이며, 실제 사용자 요청에서의 재작성·추가 검색 빈도는 아직 계측하지 않았습니다. F3(2026-10-20)와 F8(2026-10-22)은 각각 별도로 실행한 단일 합성 사례이며, 표의 지연값은 실행 시점별 결과입니다.
 
