@@ -304,7 +304,7 @@ FastAPI 엔드포인트는 `backend/app/main.py`에 선언되어 있습니다.
 
 **인증·세션:** `/api/sessions`에서 발급받은 접근 토큰을 세션 전용 API 요청의 `Authorization` 헤더에 전달합니다. 잘못되거나 없는 세션 접근 권한은 동일한 `404` 응답으로 처리하여 세션 존재 여부 노출을 줄입니다. 익명 토큰은 정식 사용자 인증을 대체하지 않습니다.
 
-**SSE 이벤트:** `status`(진행 단계) → `token`(검증된 답변 조각) → `sources`(참고 근거) → `recommendations`(후속 질문) → `done`(완료) 순서로 전송하며, 실패 시 `error`를 전송합니다. `token`은 **Validator 검증 후** 제공되므로 모델의 미검증 초안이 노출되지 않습니다.
+**SSE 이벤트:** `status`(진행 단계; 반복 가능), `token`(검증된 답변 조각), `sources`(참고 근거), `recommendations`(후속 질문), `done`(완료), `error`(실패)를 사용합니다. 근거나 후속 질문이 없으면 해당 이벤트는 생략될 수 있습니다. `token`은 **Validator 검증 후** 제공되므로 모델의 미검증 초안이 노출되지 않습니다.
 
 **요청·응답 스키마:** 정확한 필드와 타입은 서버 실행 후 [Swagger UI](http://127.0.0.1:8000/docs) 또는 [OpenAPI JSON](http://127.0.0.1:8000/openapi.json)에서 확인할 수 있습니다. MCP는 위 HTTP API와 별도의 서버 진입점으로 제공됩니다.
 
@@ -321,11 +321,13 @@ FastAPI 엔드포인트는 `backend/app/main.py`에 선언되어 있습니다.
 cd skala-ai-service-pharmamate
 python3.11 -m venv pharma
 source pharma/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-api.txt
 npm ci --prefix frontend
 ```
 
 Windows PowerShell에서는 `py -3.11 -m venv pharma` 및 `.\pharma\Scripts\Activate.ps1`을 사용합니다.
+
+`requirements-api.txt`는 PharmaMate 3.0 API·MCP 실행용 의존성만 설치합니다. 비교 기준선의 Gradio·ipykernel 환경까지 필요한 경우에만 `requirements.txt`를 사용합니다.
 
 ### 6.2 환경 변수
 
@@ -390,7 +392,9 @@ npm run dev --prefix frontend
 
 ### 최종 실행 화면
 
-최종 실행 화면 캡처를 받으면 여기에 추가합니다. 현재 저장소의 기사 입력 화면은 기능별 캡처로 5.1에, SSE 오류 안내 화면은 5.6에 배치되어 있습니다.
+아래는 PharmaMate 3.0의 AI Tutor 최종 실행 화면입니다. 기사 입력·브리핑은 5.1, 학습 기록은 5.7의 기능별 캡처에서 확인할 수 있습니다.
+
+![PharmaMate 3.0 AI Tutor 최종 실행 화면](docs/experiments/assets/F5_2_ai_tutor_qa.png)
 
 브라우저 실험: [F6.4 브라우저 E2E](docs/experiments/F6_4_browser_e2e.md). 개별 기능 기록: [`docs/experiments/`](docs/experiments/).
 
