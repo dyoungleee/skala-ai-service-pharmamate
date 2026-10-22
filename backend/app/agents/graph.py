@@ -9,6 +9,7 @@ import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Literal, TypedDict, Any
+from urllib.parse import urlparse
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -16,7 +17,7 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 
 from backend.app.agents.evidence import TRUSTED_HOSTS, asks_trial_detail, care_references, is_trusted_source, needs_care_reference
-from backend.app.agents.validator import build_answer_validator, validate_answer, validation_next_step
+from backend.app.agents.validator import build_answer_validator, validate_answer
 from backend.app.services.recommendations import (
     LearningTurnResponse,
     fallback_recommendations,
@@ -60,6 +61,7 @@ class AgentState(TypedDict, total=False):
     recommendations: list[dict[str, str]]
     answer_attempts: int
     validation_retries: int
+    answer_revisions: int
     validation_status: str
     validation_feedback: str
     unsupported_claims: list[str]
@@ -68,9 +70,24 @@ class AgentState(TypedDict, total=False):
     web_searches: int
     lookup_required: bool
     last_search_query: str
+    evidence_searches: int
+    awaiting_evidence_retry: bool
+    new_evidence_found: bool
+    evidence_source_keys: list[str]
 
 
 _SOURCE_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pharmamate-source")
+MAX_ANSWER_ATTEMPTS = 3
+MAX_VALIDATION_REWRITES = 1
+MAX_WEB_SEARCHES = 2
+MIN_NEW_SOURCE_CONTENT_LENGTH = 40
+
+
+def _source_key(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    path = parsed.path.rstrip("/")
+    return f"{host}{path}" if host else str(url or "").strip().casefold()
 
 
 def question_mentions_selected_term(question: str, term_context: str) -> bool:
@@ -298,24 +315,70 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
                 error = f"웹 검색에 실패했습니다 ({type(exc).__name__})."
         elif not search_client and state.get("lookup_required"):
             error = "외부 검색을 사용할 수 없습니다."
-        # Only official/registry sources are usable as evidence. Each label matches a UI source.
-        selected = []
+
+        previous_sources = list(state.get("sources", []))
+        previous_source_keys = {
+            _source_key(source.get("url", ""))
+            for source in previous_sources
+            if source.get("url")
+        }
+        previous_evidence_keys = set(state.get("evidence_source_keys", []))
         seen = set()
+        unique_rows = []
         for row in rows:
             url = str(row.get("url", ""))
-            if url not in seen:
-                selected.append(row)
-                seen.add(url)
-            if len(selected) == 5:
-                break
-        sources = [{"title": str(row.get("title", "")), "url": str(row["url"])} for row in selected]
+            key = _source_key(url)
+            if url and key and key not in seen:
+                unique_rows.append(row)
+                seen.add(key)
+
+        retrying_for_evidence = bool(state.get("awaiting_evidence_retry"))
+        if retrying_for_evidence:
+            # A retry only counts as new evidence when it is a new trusted URL
+            # with usable source text. Repeated URLs and title-only hits do not
+            # trigger another answer generation.
+            candidates = [
+                row for row in unique_rows
+                if _source_key(str(row.get("url", ""))) not in previous_evidence_keys
+                and len(str(row.get("content", "")).strip()) >= MIN_NEW_SOURCE_CONTENT_LENGTH
+            ]
+        else:
+            candidates = unique_rows
+        selected = candidates[:5]
+
+        added_sources = [
+            {"title": str(row.get("title", "")), "url": str(row["url"])}
+            for row in selected
+        ]
+        merged_sources = list(previous_sources)
+        merged_source_keys = set(previous_source_keys)
+        for source in added_sources:
+            key = _source_key(source.get("url", ""))
+            if key and key not in merged_source_keys:
+                merged_sources.append(source)
+                merged_source_keys.add(key)
+
         context = [
-            f"[웹 {index}] {row.get('title', '')}\nURL: {row['url']}\n본문 요약: {str(row.get('content', ''))[:1700]}"
+            f"[웹 {len(previous_sources) + index}] {row.get('title', '')}\nURL: {row['url']}\n본문 요약: {str(row.get('content', ''))[:1700]}"
             for index, row in enumerate(selected, 1)
         ]
+        new_context = "\n\n".join(context)
+        if retrying_for_evidence:
+            prior_context = state.get("web", "")
+            web_context = "\n\n".join(part for part in (prior_context, new_context) if part)
+        else:
+            web_context = new_context or (error + " 확인된 공식 자료를 찾지 못했습니다.")
+        evidence_source_keys = set(previous_evidence_keys)
+        evidence_source_keys.update(
+            _source_key(str(row.get("url", "")))
+            for row in (selected if retrying_for_evidence else unique_rows)
+            if len(str(row.get("content", "")).strip()) >= MIN_NEW_SOURCE_CONTENT_LENGTH
+        )
         return {
-            "web": "\n\n".join(context) or (error + " 확인된 공식 자료를 찾지 못했습니다."),
-            "sources": sources,
+            "web": web_context,
+            "sources": merged_sources,
+            "evidence_source_keys": sorted(evidence_source_keys),
+            "new_evidence_found": bool(selected) if retrying_for_evidence else False,
             "web_searches": int(state.get("web_searches", 0)) + (1 if search_client and state.get("lookup_required") else 0),
             "last_search_query": query if search_client and state.get("lookup_required") else state.get("last_search_query", ""),
         }
@@ -331,6 +394,9 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
 
     def agent_answer(state: AgentState) -> dict[str, Any]:
         attempts = int(state.get("answer_attempts", 0)) + 1
+        revision_count = int(state.get("answer_revisions", 0))
+        if attempts > 1 and state.get("validation_status") == "revise":
+            revision_count += 1
         payload = {
             "article": state.get("article", "")[:14000],
             "term": state.get("term", ""),
@@ -370,6 +436,10 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
             "sources": sources,
             "answer_attempts": attempts,
             "validation_retries": max(0, attempts - 1),
+            "answer_revisions": revision_count,
+            "evidence_searches": int(state.get("evidence_searches", 0)),
+            "awaiting_evidence_retry": False,
+            "new_evidence_found": False,
         }
 
     def agent_validate(state: AgentState) -> dict[str, Any]:
@@ -391,10 +461,17 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
                 evidence=evidence,
                 sources=state.get("sources", []),
             )
+            unsupported_claims = verdict.get("unsupported_claims", [])
+            feedback = str(verdict.get("feedback", "")).strip()
+            if verdict["status"] == "revise" and not feedback and unsupported_claims:
+                feedback = (
+                    "근거에서 확인되지 않은 다음 주장을 삭제하거나 확인 불가로 제한하세요: "
+                    + "; ".join(str(claim) for claim in unsupported_claims[:5])
+                )
             return {
                 "validation_status": verdict["status"],
-                "validation_feedback": verdict.get("feedback", ""),
-                "unsupported_claims": verdict.get("unsupported_claims", []),
+                "validation_feedback": feedback,
+                "unsupported_claims": unsupported_claims,
                 "supported_answer": verdict.get("supported_answer", ""),
                 "missing_evidence_query": verdict.get("missing_evidence_query", ""),
             }
@@ -422,7 +499,7 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
                     (state.get("term", "").splitlines() or [""])[0]
                 ),
                 "validation_status": "insufficient_evidence",
-                "validation_feedback": "수정 1회 후에도 근거가 충분하지 않아 답변을 보수적으로 제한했습니다.",
+                "validation_feedback": "현재 제공된 자료와 추가 검색 결과에서 질문에 필요한 근거를 확인하지 못했습니다.",
             }
         return {
             "answer": answer,
@@ -433,23 +510,56 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
 
     def after_validation(state: AgentState) -> str:
         status = state.get("validation_status", "unavailable")
-        if status == "insufficient_evidence" and int(state.get("answer_attempts", 0)) < 2:
-            if search_client and not state.get("web_searches"):
-                return "retrieve"
-            if (state.get("missing_evidence_query") and state.get("missing_evidence_query") != state.get("last_search_query")
-                    and int(state.get("web_searches", 0)) < 2 and search_client):
-                return "retrieve"
+        answer_attempts = int(state.get("answer_attempts", 0))
+        if status == "pass":
+            return "end"
+        if status == "unavailable":
             return "fallback"
-        return validation_next_step(
-            status,
-            int(state.get("answer_attempts", 0)),
-        )
+        if status == "revise":
+            has_revision_guidance = bool(
+                str(state.get("validation_feedback", "")).strip()
+                or state.get("unsupported_claims")
+            )
+            if (
+                has_revision_guidance
+                and int(state.get("answer_revisions", 0)) < MAX_VALIDATION_REWRITES
+                and answer_attempts < MAX_ANSWER_ATTEMPTS
+            ):
+                return "answer"
+            return "fallback"
+        if status == "insufficient_evidence":
+            query = str(state.get("missing_evidence_query", "")).strip()
+            previous_query = str(state.get("last_search_query", "")).strip()
+            normalized_query = re.sub(r"\s+", " ", query).casefold()
+            normalized_previous_query = re.sub(r"\s+", " ", previous_query).casefold()
+            if (
+                query
+                and normalized_query != normalized_previous_query
+                and search_client
+                and int(state.get("web_searches", 0)) < MAX_WEB_SEARCHES
+                and answer_attempts < MAX_ANSWER_ATTEMPTS
+            ):
+                return "retrieve"
+        return "fallback"
+
+    def after_web_retrieval(state: AgentState) -> str:
+        if state.get("awaiting_evidence_retry") and not state.get("new_evidence_found"):
+            return "fallback"
+        return "answer"
 
     def agent_retrieval_plan(state: AgentState) -> dict[str, Any]:
-        query = state.get("missing_evidence_query") or state.get("search_query") or state["question"]
-        return {"search_query": query, "lookup_required": True, "validation_feedback": (
-            state.get("validation_feedback", "") + " 새 근거에서 확인된 부분만 답하고, 없는 시험별 세부사항은 확인 불가로 구분하세요."
-        )}
+        query = str(state.get("missing_evidence_query", "")).strip()
+        return {
+            "search_query": query,
+            "lookup_required": True,
+            "awaiting_evidence_retry": True,
+            "new_evidence_found": False,
+            "evidence_searches": int(state.get("evidence_searches", 0)) + 1,
+            "validation_feedback": (
+                state.get("validation_feedback", "")
+                + " 새 공식 자료에서 직접 확인되는 부분만 답하고, 자료가 없으면 확인 불가로 구분하세요."
+            ),
+        }
 
     def choose_route(state: AgentState) -> str:
         return state.get("route", "article")
@@ -468,7 +578,9 @@ related_to_selected는 질문이 현재 선택 용어에 실제로 관련된 경
         "article": "answer", "memory": "memory", "web": "web", "memory_web": "memory_web",
     })
     builder.add_edge("memory", "answer")
-    builder.add_edge("web", "answer")
+    builder.add_conditional_edges("web", after_web_retrieval, {
+        "answer": "answer", "fallback": "insufficient",
+    })
     builder.add_edge("memory_web", "answer")
     builder.add_edge("answer", "validator")
     builder.add_conditional_edges("validator", after_validation, {

@@ -109,6 +109,8 @@ def initialize_database():
             recommendations_json TEXT NOT NULL DEFAULT '[]',
             validation_status TEXT NOT NULL DEFAULT '',
             validation_retries INTEGER NOT NULL DEFAULT 0,
+            answer_revisions INTEGER NOT NULL DEFAULT 0,
+            evidence_searches INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             FOREIGN KEY(session_id) REFERENCES study_sessions(session_id) ON DELETE CASCADE
         );
@@ -176,6 +178,14 @@ def initialize_database():
         CREATE INDEX IF NOT EXISTS idx_session_articles_duplicates
             ON session_articles(session_id, canonical_url, content_hash, normalized_title);
         """)
+        turn_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(session_turns)").fetchall()
+        }
+        for column in ("answer_revisions", "evidence_searches"):
+            if column not in turn_columns:
+                conn.execute(
+                    f"ALTER TABLE session_turns ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+                )
 
 def now_local():
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -257,14 +267,15 @@ def append_session_turn(session_id: str, turn: dict) -> None:
     with connect_db() as conn:
         conn.execute("""INSERT INTO session_turns
             (turn_id,session_id,question,answer,term_key,term_name,article_id,related_to_selected,route,
-             sources_json,recommendations_json,validation_status,validation_retries,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             sources_json,recommendations_json,validation_status,validation_retries,answer_revisions,evidence_searches,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (uuid.uuid4().hex, session_id, turn["question"], turn["answer"],
              turn.get("term_key", ""), turn.get("term_name", ""), turn.get("article_id", ""),
              int(bool(turn.get("related_to_selected"))), turn.get("route", ""),
              json.dumps(turn.get("sources") or [], ensure_ascii=False),
              json.dumps(turn.get("recommendations") or [], ensure_ascii=False),
-             turn.get("validation_status", ""), int(turn.get("validation_retries") or 0), created_at))
+             turn.get("validation_status", ""), int(turn.get("validation_retries") or 0),
+             int(turn.get("answer_revisions") or 0), int(turn.get("evidence_searches") or 0), created_at))
         conn.execute("""UPDATE study_sessions SET selected_term_key=?,updated_at=?
             WHERE session_id=?""", (turn.get("term_key", ""), created_at, session_id))
 

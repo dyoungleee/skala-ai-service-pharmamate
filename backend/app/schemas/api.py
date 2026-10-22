@@ -57,6 +57,8 @@ class ChatResponse(BaseModel):
     sources: list[dict[str, str]] = Field(default_factory=list)
     validation_status: str = ""
     validation_retries: int = 0
+    answer_revisions: int = 0
+    evidence_searches: int = 0
     recommendations: list[LearningQuestion] = Field(default_factory=list)
 
 
@@ -97,6 +99,8 @@ class SessionTurn(BaseModel):
     recommendations: list[LearningQuestion] = Field(default_factory=list)
     validation_status: str = ""
     validation_retries: int = 0
+    answer_revisions: int = 0
+    evidence_searches: int = 0
     created_at: str
 
 

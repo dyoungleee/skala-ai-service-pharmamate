@@ -808,6 +808,7 @@ function restoreSnapshot(snapshot) {
         recommendations: turn.recommendations, route: turn.route,
         relatedToSelected: turn.related_to_selected, selectedTerm: turn.term_name,
         validationStatus: turn.validation_status, validationRetries: turn.validation_retries,
+        answerRevisions: turn.answer_revisions || 0, evidenceSearches: turn.evidence_searches || 0,
       },
     )
     if (turn.term_name) threadTerms.set(threadKey, { term: turn.term_name })
@@ -977,6 +978,8 @@ function handleSseEvent(name, data, assistantMessage) {
     assistantMessage.route = data.route || ''
     assistantMessage.validationStatus = data.validation_status || ''
     assistantMessage.validationRetries = data.validation_retries || 0
+    assistantMessage.answerRevisions = data.answer_revisions || 0
+    assistantMessage.evidenceSearches = data.evidence_searches || 0
     assistantMessage.relatedToSelected = Boolean(data.related_to_selected)
     currentStatus.value = '답변과 근거 검토가 완료됐습니다.'
   } else if (name === 'error') {
@@ -1043,6 +1046,7 @@ async function sendQuestion(questionOverride = '') {
   const assistantMessage = {
     role: 'assistant', content: '', sources: [], recommendations: [],
     relatedToSelected: false, selectedTerm: selected?.term ?? '', validationStatus: '', validationRetries: 0,
+    answerRevisions: 0, evidenceSearches: 0,
   }
   messages.value.push(assistantMessage)
   question.value = ''
@@ -1385,7 +1389,7 @@ initializeSession()
                   <div class="message-meta">
                     <strong>PharmaMate</strong>
                     <span v-if="message.validationStatus" class="validation-pill" :class="message.validationStatus === 'pass' ? 'validation-ok' : 'validation-caution'">
-                      {{ message.validationStatus === 'pass' ? '근거 확인' : '근거 부족' }}<template v-if="message.validationRetries"> · 수정 {{ message.validationRetries }}회</template>
+                      {{ message.validationStatus === 'pass' ? '근거 확인' : message.validationStatus === 'unavailable' ? '검증 미완료' : '근거 부족' }}<template v-if="message.answerRevisions"> · 답변 수정 {{ message.answerRevisions }}회</template><template v-if="message.evidenceSearches"> · 추가 검색 시도 {{ message.evidenceSearches }}회</template>
                     </span>
                   </div>
                   <p class="answer-text" v-html="renderAnswerText(message.content)"></p>

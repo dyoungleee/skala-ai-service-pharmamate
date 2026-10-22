@@ -59,6 +59,8 @@ class FakeGraph:
             "sources": [],
             "validation_status": "pass",
             "validation_retries": 0,
+            "answer_revisions": 0,
+            "evidence_searches": 1,
             "recommendations": fallback_recommendations("임상 1상"),
         }
 
@@ -82,6 +84,8 @@ class FakeGraph:
                 "sources": [],
                 "validation_status": "pass",
                 "validation_retries": 0,
+                "answer_revisions": 0,
+                "evidence_searches": 1,
                 "recommendations": fallback_recommendations("임상 1상"),
             }},
         }
@@ -184,6 +188,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["validation_status"], "pass")
+        self.assertEqual(payload["evidence_searches"], 1)
         self.assertTrue(payload["related_to_selected"])
         self.assertEqual(len(payload["recommendations"]), 3)
         self.assertIn("임상시험은 뭐야?", self.runtime.agent_graph.payload["history"])
@@ -201,6 +206,7 @@ class ApiTests(unittest.TestCase):
         self.assertIn("event: recommendations", body)
         self.assertIn("event: done", body)
         self.assertIn('"related_to_selected":true', body)
+        self.assertIn('"evidence_searches":1', body)
 
     def test_study_record_save_only_links_questions_marked_relevant(self):
         request = {
@@ -268,6 +274,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(snapshot["article"]["analysis"]["article_questions"], analyzed["analysis"]["article_questions"])
         self.assertEqual(len(snapshot["turns"]), 1)
         self.assertEqual(snapshot["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
+        self.assertEqual(snapshot["turns"][0]["evidence_searches"], 1)
 
         # A fresh Python process must restore the snapshot from the same SQLite file.
         script = """
@@ -298,6 +305,7 @@ print(json.dumps(response.json(), ensure_ascii=False))
         snapshot_after_restart = json.loads(reopened.stdout)
         self.assertEqual(snapshot_after_restart["article"]["article_id"], analyzed["article_id"])
         self.assertEqual(snapshot_after_restart["turns"][0]["question"], "임상 1상에서 무엇을 확인해?")
+        self.assertEqual(snapshot_after_restart["turns"][0]["evidence_searches"], 1)
 
         second = self.client.post("/api/sessions").json()
         other = self.client.get(

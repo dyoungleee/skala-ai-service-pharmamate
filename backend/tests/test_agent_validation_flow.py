@@ -69,6 +69,7 @@ class AgentValidationFlowTests(unittest.TestCase):
         })
         self.assertEqual(result["answer_attempts"], 2)
         self.assertEqual(result["validation_retries"], 1)
+        self.assertEqual(result["answer_revisions"], 1)
         self.assertEqual(result["validation_status"], "pass")
         self.assertNotIn("87%", result["answer"])
         self.assertEqual(len(result["recommendations"]), 3)
@@ -94,6 +95,7 @@ class AgentValidationFlowTests(unittest.TestCase):
         })
         self.assertEqual(result["answer_attempts"], 2)
         self.assertEqual(result["validation_retries"], 1)
+        self.assertEqual(result["answer_revisions"], 1)
         self.assertEqual(result["validation_status"], "insufficient_evidence")
         self.assertNotIn("87%", result["answer"])
         self.assertIn("단정하지 않겠습니다", result["answer"])
@@ -105,6 +107,87 @@ class AgentValidationFlowTests(unittest.TestCase):
         self.assertIn("임상 성공률", result["recommendations"][0]["question"])
         self.assertIn("공식 자료", result["recommendations"][1]["question"])
         self.assertIn("확인된 내용", result["recommendations"][2]["question"])
+
+    def test_insufficient_answer_retries_only_after_distinct_official_sources(self):
+        class Search:
+            def __init__(self):
+                self.calls = 0
+
+            def search(self, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {"results": [{
+                        "title": "공식 시험 등록 자료",
+                        "url": "https://clinicaltrials.gov/study/NCT00000001",
+                        "content": "시험 등록 자료에는 대상 환자군, 투여 계획, 평가 항목 등 확인에 필요한 정보를 기록합니다. " * 2,
+                    }]}
+                return {"results": [{
+                    "title": "공식 규제기관 자료",
+                    "url": "https://www.fda.gov/drugs/example-review",
+                    "content": "규제기관 검토 자료에는 해당 치료의 근거와 검토 범위가 설명되며 원문에서 세부 사항을 확인할 수 있습니다. " * 2,
+                }]}
+
+        validations = [
+            AnswerValidation(status="insufficient_evidence", missing_evidence_query="trial protocol details"),
+            AnswerValidation(status="insufficient_evidence", missing_evidence_query="official review scope"),
+            AnswerValidation(status="pass"),
+        ]
+        search = Search()
+        graph = build_graph(
+            ["초안 답변", "첫 번째 새 근거를 반영한 답변", "두 번째 새 근거까지 반영한 답변"],
+            RunnableLambda(lambda _payload: validations.pop(0)),
+            search_client=search,
+        )
+
+        result = graph.invoke({
+            "question": "현재 자료에서 확인할 수 있는 범위는 무엇인가요?",
+            "article": "가상 기사에는 질문의 핵심 세부사항이 나오지 않습니다.",
+        })
+
+        self.assertEqual(search.calls, 2)
+        self.assertEqual(result["answer_attempts"], 3)
+        self.assertEqual(result["validation_retries"], 2)
+        self.assertEqual(result["answer_revisions"], 0)
+        self.assertEqual(result["evidence_searches"], 2)
+        self.assertEqual(result["validation_status"], "pass")
+        self.assertIn("NCT00000001", result["web"])
+        self.assertIn("example-review", result["web"])
+        self.assertEqual(len(result["sources"]), 2)
+
+    def test_insufficient_answer_stops_when_search_repeats_the_same_source(self):
+        class Search:
+            def __init__(self):
+                self.calls = 0
+
+            def search(self, **_kwargs):
+                self.calls += 1
+                return {"results": [{
+                    "title": "공식 시험 등록 자료",
+                    "url": "https://clinicaltrials.gov/study/NCT00000002",
+                    "content": "공식 시험 등록 자료에서 시험 목적과 대상군, 계획된 평가 항목을 확인할 수 있습니다. " * 2,
+                }]}
+
+        search = Search()
+        graph = build_graph(
+            ["시험 구성에 관한 초안입니다."],
+            RunnableLambda(lambda _payload: AnswerValidation(
+                status="insufficient_evidence", missing_evidence_query="trial treatment details"
+            )),
+            route="web",
+            search_client=search,
+        )
+
+        result = graph.invoke({
+            "question": "현재 자료에서 확인할 수 있는 범위는 무엇인가요?",
+            "article": "가상 기사에는 질문의 핵심 세부사항이 나오지 않습니다.",
+        })
+
+        self.assertEqual(search.calls, 2)
+        self.assertEqual(result["answer_attempts"], 1)
+        self.assertEqual(result["evidence_searches"], 1)
+        self.assertEqual(result["validation_status"], "insufficient_evidence")
+        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(len(result["recommendations"]), 3)
 
     def test_memory_web_sources_run_concurrently_and_both_reach_answer(self):
         rendezvous = threading.Barrier(2, timeout=2)
@@ -164,7 +247,11 @@ class AgentValidationFlowTests(unittest.TestCase):
 
             def search(self, **kwargs):
                 self.queries.append(kwargs["query"])
-                return {"results": [{"title": "Trial record", "url": "https://clinicaltrials.gov/study/NCT00000000", "content": "시험 설계 정보"}]}
+                return {"results": [{
+                    "title": "Trial record",
+                    "url": "https://clinicaltrials.gov/study/NCT00000000",
+                    "content": "공식 시험 등록 자료에는 시험 대상과 목적, 계획된 평가 항목 등 세부 설계 정보가 기록되어 있습니다.",
+                }]}
 
         search = Search()
         calls = 0
@@ -177,9 +264,11 @@ class AgentValidationFlowTests(unittest.TestCase):
             return AnswerValidation(status="pass")
 
         graph = build_graph(["초안", "검색 근거를 반영한 답변"], RunnableLambda(judge), search_client=search)
-        result = graph.invoke({"question": "시험의 치료 내용은?", "article": "시험을 계획했다."})
+        result = graph.invoke({"question": "현재 자료로 확인할 수 있는 범위는?", "article": "시험을 계획했다."})
         self.assertEqual(search.queries, ["trial protocol BSC SoC"])
         self.assertEqual(result["answer_attempts"], 2)
+        self.assertEqual(result["evidence_searches"], 1)
+        self.assertEqual(result["answer_revisions"], 0)
         self.assertEqual(result["answer"], "검색 근거를 반영한 답변")
 
     def test_supported_partial_answer_survives_failed_validation(self):

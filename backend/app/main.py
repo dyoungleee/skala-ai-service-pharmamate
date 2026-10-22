@@ -202,6 +202,8 @@ def chat_endpoint(
         sources=result.get("sources") or [],
         validation_status=str(result.get("validation_status") or ""),
         validation_retries=int(result.get("validation_retries") or 0),
+        answer_revisions=int(result.get("answer_revisions") or 0),
+        evidence_searches=int(result.get("evidence_searches") or 0),
         recommendations=result.get("recommendations") or [],
     )
 
@@ -310,6 +312,8 @@ async def build_chat_stream(
                     "recommendations": final_state.get("recommendations") or [],
                     "validation_status": str(final_state.get("validation_status") or ""),
                     "validation_retries": int(final_state.get("validation_retries") or 0),
+                    "answer_revisions": int(final_state.get("answer_revisions") or 0),
+                    "evidence_searches": int(final_state.get("evidence_searches") or 0),
                 })
             # 검증 전 초안은 내보내지 않습니다. 검증이 끝난 답변만 짧은 조각으로 전달합니다.
             for offset in range(0, len(answer), 48):
@@ -322,6 +326,8 @@ async def build_chat_stream(
                 "related_to_selected": bool(final_state.get("related_to_selected", False)),
                 "validation_status": final_state.get("validation_status", ""),
                 "validation_retries": int(final_state.get("validation_retries", 0)),
+                "answer_revisions": int(final_state.get("answer_revisions", 0)),
+                "evidence_searches": int(final_state.get("evidence_searches", 0)),
             })
         except Exception as exc:
             yield sse_event("error", {"message": f"스트리밍 답변 생성 실패 ({type(exc).__name__})."})
